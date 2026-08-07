@@ -1,0 +1,33 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif;
+  background-color: #f9fafb;
+  color: #1f2937;
+}
+
+/* 스크롤바 커스텀 */
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #f9fafb;
+}
+::-webkit-scrollbar-thumb {
+  background: #d1d5db;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #9ca3af;
+}
+
+/* Toss 스타일 캐릭터 튕김 효과 애니메이션 */
+@keyframes tossBounce {
+  0%, 100% { transform: translateY(0) scale(1); }
+  50% { transform: translateY(-15px) scale(0.95); }
+}
+.character-bounce {
+  animation: tossBounce 1.6s ease-in-out infinite;
+}
