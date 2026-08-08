@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
 import sharp from 'sharp'
+import { cookies } from 'next/headers'
 
 // UUID 생성용 헬퍼
 function generateUUID() {
@@ -67,6 +68,21 @@ export async function POST(req: NextRequest) {
     const uuid = generateUUID()
     const fileName = `${uuid}.png`
 
+    // emojis 스토리지 버킷이 없으면 백엔드 단에서 자동 Private 생성 (무오류 연동)
+    try {
+      const { data: buckets } = await supabase.storage.listBuckets()
+      const hasBucket = buckets?.some(b => b.name === 'emojis')
+      if (!hasBucket) {
+        console.log("emojis bucket not found. Auto-creating private emojis bucket...")
+        await supabase.storage.createBucket('emojis', {
+          public: false,
+          allowedMimeTypes: ['image/png']
+        })
+      }
+    } catch (e) {
+      console.warn("Storage bucket pre-check failed, proceeding to upload:", e)
+    }
+
     // Storage 업로드
     const { error: uploadError } = await supabase.storage
       .from('emojis')
@@ -79,13 +95,19 @@ export async function POST(req: NextRequest) {
       throw new Error(`Storage upload failed: ${uploadError.message}`)
     }
 
+    // 현재 지갑 세션 쿠키 획득
+    const cookieStore = await cookies()
+    const walletAddress = cookieStore.get('wallet_address')?.value || null
+
     // DB 기록
     const { error: dbError } = await supabase
       .from('emojis')
       .insert({
         uuid: uuid,
         style_type: style,
-        file_path: fileName
+        file_path: fileName,
+        creator_wallet: walletAddress ? walletAddress.toLowerCase() : null,
+        owner_wallet: walletAddress ? walletAddress.toLowerCase() : null
       })
 
     if (dbError) {

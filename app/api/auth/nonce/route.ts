@@ -19,13 +19,13 @@ export async function GET(req: NextRequest) {
 
     // 2. DB에 기록 (upsert)
     const { error } = await supabase
-      .from('wallet_nonces')
+      .from('web3_users')
       .upsert({
-        address: address.toLowerCase(),
+        wallet_address: address.toLowerCase(),
         nonce: nonce,
-        expires_at: expiresAt
+        nonce_expires_at: expiresAt
       }, {
-        onConflict: 'address'
+        onConflict: 'wallet_address'
       })
 
     if (error) {

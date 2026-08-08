@@ -16,9 +16,9 @@ export async function POST(req: NextRequest) {
 
     // 1. DB에서 지갑 주소에 매핑된 최신 Nonce 조회
     const { data: record, error: dbError } = await supabase
-      .from('wallet_nonces')
-      .select('nonce, expires_at')
-      .eq('address', address.toLowerCase())
+      .from('web3_users')
+      .select('nonce, nonce_expires_at')
+      .eq('wallet_address', address.toLowerCase())
       .single()
 
     if (dbError || !record) {
@@ -26,7 +26,7 @@ export async function POST(req: NextRequest) {
     }
 
     // 2. 만료 시간 체크
-    if (new Date(record.expires_at) < new Date()) {
+    if (new Date(record.nonce_expires_at) < new Date()) {
       return NextResponse.json({ status: 'error', message: '서명 시간이 초과되었습니다. 다시 시도해 주세요.' }, { status: 400 })
     }
 
@@ -41,25 +41,18 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ status: 'error', message: '서명 검증 실패: 지갑 주소가 일치하지 않습니다.' }, { status: 401 })
     }
 
-    // 5. Supabase DB users 테이블에 지갑 유저 등록 (upsert)
+    // 5. web3_users 테이블의 유저 상태 및 난스 일괄 업데이트 (리플레이 차단 및 로그인 시간 기록)
     const { error: userError } = await supabase
-      .from('users')
-      .upsert({
-        wallet_address: address.toLowerCase(),
-        last_login_at: new Date().toISOString()
-      }, {
-        onConflict: 'wallet_address'
+      .from('web3_users')
+      .update({
+        nonce: 'USED',
+        updated_at: new Date().toISOString()
       })
+      .eq('wallet_address', address.toLowerCase())
 
     if (userError) {
-      throw new Error(`Failed to update user in DB: ${userError.message}`)
+      throw new Error(`Failed to update user session in DB: ${userError.message}`)
     }
-
-    // 사용된 난스 즉각 폭파 (리플레이 공격 차단)
-    await supabase
-      .from('wallet_nonces')
-      .delete()
-      .eq('address', address.toLowerCase())
 
     // 6. 보안 로그인 세션 쿠키 생성
     const cookieStore = await cookies()
