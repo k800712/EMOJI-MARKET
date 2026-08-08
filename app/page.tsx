@@ -12,7 +12,8 @@ import {
   FileArchive, 
   Bell, 
   Layers,
-  Sparkles
+  Sparkles,
+  Trash2
 } from 'lucide-react'
 import WalletConnect from '@/components/WalletConnect'
 import EmojiKeyboardSelector from '@/components/EmojiKeyboardSelector'
@@ -250,6 +251,35 @@ export default function Home() {
     } catch (e) {
       setIsGenerating(false)
       alert('ZIP 압축 패키징 중 오류가 발생했습니다.')
+    }
+  }
+
+  const deleteEmoji = async (uuid: string) => {
+    if (!confirm('이 이모티콘을 보관함에서 영구 삭제하시겠습니까?')) {
+      return
+    }
+
+    try {
+      const response = await fetch('/api/delete-emoji', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ uuid }),
+      })
+
+      const result = await response.json()
+      if (result.status === 'success') {
+        // 로컬 선택 상태 정리
+        const nextSelected = new Set(selectedUUIDs)
+        nextSelected.delete(uuid)
+        setSelectedUUIDs(nextSelected)
+
+        // 보관함 목록 갱신
+        loadHistory()
+      } else {
+        alert('삭제 실패: ' + result.message)
+      }
+    } catch (e) {
+      alert('삭제 처리 도중 오류가 발생했습니다.')
     }
   }
 
@@ -613,6 +643,17 @@ export default function Home() {
                         className="w-5 h-5 rounded-full border border-gray-300 bg-white text-brand-primary cursor-pointer accent-blue-500" 
                       />
                     </div>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        deleteEmoji(item.uuid)
+                      }}
+                      className="absolute top-2 right-2 z-20 p-1.5 rounded-lg bg-white/90 hover:bg-rose-50 border border-gray-200 hover:border-rose-200 text-gray-400 hover:text-rose-500 transition-all opacity-0 group-hover:opacity-100 shadow-sm"
+                      title="이모티콘 삭제"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
                     <div className="w-full aspect-square bg-gray-50 rounded-xl overflow-hidden relative flex items-center justify-center border border-gray-100">
                       <img 
                         src={`/api/view?uuid=${item.uuid}`} 
