@@ -1,72 +1,163 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/utils/supabase/server'
 import sharp from 'sharp'
-import { cookies } from 'next/headers'
+import { createClient } from '@supabase/supabase-js'
 
-// UUID 생성용 헬퍼
-function generateUUID() {
-  return crypto.randomUUID()
-}
+// Supabase 마스터 서비스 롤 클라이언트 세팅
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+)
 
 export async function POST(req: NextRequest) {
   try {
     const formData = await req.formData()
     const file = formData.get('emoji_image') as File | null
-    const style = (formData.get('style') as string) || 'trendy'
     const targetCountry = (formData.get('target_country') as string) || 'KR'
-    const customText = (formData.get('text') as string) || ''
+    const styleType = (formData.get('style_type') as string) || 'Webtoon'
+    const userWallet = (formData.get('user_wallet') as string) || 'guest'
 
     if (!file) {
-      return NextResponse.json({ status: 'error', message: '이미지 파일이 필요합니다.' }, { status: 400 })
+      return NextResponse.json({ status: 'error', message: '파일이 업로드되지 않았습니다.' }, { status: 400 })
     }
 
     const arrayBuffer = await file.arrayBuffer()
     const inputBuffer = Buffer.from(arrayBuffer)
-    const mimeType = file.type
 
-    // 글로벌 감정문화 기반 프롬프트 매트릭스
-    const localizationPromptMap: Record<string, string> = {
-      KR: "Focus on highly relatable, detailed situational descriptions (like studying, tired, or hungry) and rich, indirect non-verbal facial expressions favored by Korean 20s. Outline should be soft and cute.",
-      JP: "Apply 'Kawaii' style with extremely cute, simplified characters. Prioritize subtle, non-verbal emotional cues and symbolic manga elements (like sweat drops or speech bubbles) reflecting Japanese Kaomoji culture. Minimize hard text.",
-      US: "Incorporate bold outlines, American cartoon/comic book aesthetics, and clever metaphorical wit. Emphasize humorous, B-grade humor and slightly sarcastic or funny expressions.",
-      LA: "Focus on highly dramatic, comically exaggerated expressions of frustration, struggle, or daily stress (like Monday blues). Accentuate dynamic eye and hand movements to convey passionate emotions.",
-      FR: "Emphasize beautiful heart symbols, positive energy, aesthetically soft, pastel-toned colors, and highly artistic, romantic illustration styles."
+    // ----------------------------------------------------
+    // STEP 1: Gemini 1.5를 사용한 원본 이미지 멀티모달 분석
+    // ----------------------------------------------------
+    const base64Image = inputBuffer.toString('base64')
+    const geminiPayload = {
+      contents: [{
+        parts: [
+          { text: "Analyze this character or face image in detail. Describe key features like hair style, hair color, facial expression, age, glasses, and gender in 2-3 short English sentences to be used as an image generation prompt. Avoid any complex backgrounds." },
+          {
+            inlineData: {
+              mimeType: file.type,
+              data: base64Image
+            }
+          }
+        ]
+      }]
     }
 
-    const localizationPrompt = localizationPromptMap[targetCountry] || localizationPromptMap.KR
+    const geminiRes = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(geminiPayload)
+      }
+    )
+    
+    if (!geminiRes.ok) {
+      throw new Error(`Gemini API Analysis failed with status ${geminiRes.status}`)
+    }
 
-    const apiKey = process.env.GEMINI_API_KEY || ''
-    const isFallback = !apiKey || apiKey === 'your_actual_gemini_api_key_here'
-    let generatedImageBuffer: Buffer | null = null
+    const geminiData = await geminiRes.json()
+    const analyzedDescription = geminiData.candidates?.[0]?.content?.parts?.[0]?.text || "A cute character"
 
-    // 1. AI 생성 시도
-    if (!isFallback) {
-      try {
-        generatedImageBuffer = await callGeminiImageToImage(
-          inputBuffer,
-          mimeType,
-          style,
-          customText,
-          localizationPrompt,
-          apiKey
-        )
-      } catch (e) {
-        console.error('AI Generation failed, falling back to sharp filter:', e)
+    // ----------------------------------------------------
+    // STEP 2: 국가별 감정 및 디자인 화풍 마스터 프롬프트 결합
+    // ----------------------------------------------------
+    let stylePrompt = ""
+    if (styleType === 'Webtoon') {
+      stylePrompt = "clean digital webtoon illustration, bold solid outlines, vibrant flat colors"
+    } else if (styleType === 'Pixel') {
+      stylePrompt = "16-bit cute pixel art style, retro game sprite, crisp pixel edges"
+    } else if (styleType === '3D Clay') {
+      stylePrompt = "cute 3D claymation model, soft clay texture, plasticine toy style, studio lighting"
+    }
+
+    // 국가별 감정 메커니즘 인젝션
+    let emotionPrompt = ""
+    if (targetCountry === 'KR') {
+      emotionPrompt = "subtle and cute facial expression showing situational reaction, korean soft pastel colors"
+    } else if (targetCountry === 'JP') {
+      emotionPrompt = "extremely cute chibi style, simple kaomoji facial expression, kawaii anime sticker"
+    } else if (targetCountry === 'US') {
+      emotionPrompt = "bold comical reaction, witty humor, expressive cartoon facial expression"
+    } else if (targetCountry === 'LA') {
+      emotionPrompt = "passionate and comically exaggerated dramatic reaction with expressive eyes"
+    } else if (targetCountry === 'FR') {
+      emotionPrompt = "romantic pastel-toned vibe, aesthetic and gentle illustration with subtle heart metaphors"
+    }
+
+    // 최종 Imagen 3 전용 고화질 인풋 프롬프트 조립
+    const finalPrompt = `A premium mobile emoticon sticker of ${analyzedDescription}. ${stylePrompt}, ${emotionPrompt}, white thick sticker outline around the character, isolated on a pure #FFFFFF solid white background, high contrast, studio lighting.`
+
+    // ----------------------------------------------------
+    // STEP 3: Google Imagen 3 API를 사용한 고화질 이모티콘 생성
+    // ----------------------------------------------------
+    const imagenPayload = {
+      prompt: finalPrompt,
+      numberOfImages: 1,
+      outputMimeType: "image/png",
+      aspectRatio: "1:1"
+    }
+
+    const imagenRes = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:generateImages?key=${process.env.GEMINI_API_KEY}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(imagenPayload)
+      }
+    )
+
+    if (!imagenRes.ok) {
+      throw new Error(`Imagen 3 API failed with status ${imagenRes.status}`)
+    }
+
+    const imagenData = await imagenRes.json()
+    const generatedBase64 = imagenData.generatedImages?.[0]?.image?.imageBytes
+
+    if (!generatedBase64) {
+      throw new Error("Imagen 3 이미지 생성에 실패했거나 할당량이 초과되었습니다.")
+    }
+
+    const generatedBuffer = Buffer.from(generatedBase64, 'base64')
+
+    // ----------------------------------------------------
+    // STEP 4: Sharp를 활용한 카카오 표준(360x360 px, 투명배경 PNG) 가공
+    // ----------------------------------------------------
+    // #FFFFFF 순수 흰색 배경을 정밀 탐지하여 투명(Alpha 0)으로 날리는 크로마키 알고리즘 탑재
+    const { data: rawData, info: rawInfo } = await sharp(generatedBuffer)
+      .ensureAlpha()
+      .raw()
+      .toBuffer({ resolveWithObject: true })
+
+    // R, G, B 임계값을 정의해 흰색에 가까우면 알파 채널을 0(투명)으로 치환
+    const thresholdVal = 240
+    for (let i = 0; i < rawData.length; i += 4) {
+      const r = rawData[i]
+      const g = rawData[i+1]
+      const b = rawData[i+2]
+      if (r > thresholdVal && g > thresholdVal && b > thresholdVal) {
+        rawData[i+3] = 0 // alpha = 0 (투명)
       }
     }
 
-    // 2. 폴백: 로컬 sharp 필터 가공
-    if (!generatedImageBuffer) {
-      generatedImageBuffer = await applyLocalSharpFilter(inputBuffer, style)
-    }
+    const highQualityProcessedBuffer = await sharp(rawData, {
+      raw: {
+        width: rawInfo.width,
+        height: rawInfo.height,
+        channels: rawInfo.channels
+      }
+    })
+      .resize(360, 360, {
+        fit: 'contain',
+        background: { r: 0, g: 0, b: 0, alpha: 0 },
+        kernel: sharp.kernel.lanczos3 // 무손실 보간 알고리즘
+      })
+      .png({ compressionLevel: 9, quality: 100 })
+      .toBuffer()
 
-    // 3. 카카오 표준 규격 가공 (360x360 px, 투명 PNG, 72dpi, 텍스트 오버레이)
-    const processedImageBuffer = await formatToKakaoSpecification(generatedImageBuffer, customText, style)
-
-    // 4. Supabase Storage & Database 저장
-    const supabase = await createClient(true) // bypass RLS = true (service_role 사용)
-    const uuid = generateUUID()
-    const fileName = `${uuid}.png`
+    // ----------------------------------------------------
+    // STEP 5: Supabase Storage 업로드 & DB 영구 기록
+    // ----------------------------------------------------
+    const emojiUuid = crypto.randomUUID()
+    const filePath = `emojis/${emojiUuid}.png`
 
     // emojis 스토리지 버킷이 없으면 백엔드 단에서 자동 Private 생성 (무오류 연동)
     try {
@@ -83,207 +174,33 @@ export async function POST(req: NextRequest) {
       console.warn("Storage bucket pre-check failed, proceeding to upload:", e)
     }
 
-    // Storage 업로드
     const { error: uploadError } = await supabase.storage
       .from('emojis')
-      .upload(fileName, processedImageBuffer, {
+      .upload(filePath, highQualityProcessedBuffer, {
         contentType: 'image/png',
+        cacheControl: '31536000',
         upsert: true
       })
 
-    if (uploadError) {
-      throw new Error(`Storage upload failed: ${uploadError.message}`)
-    }
+    if (uploadError) throw uploadError
 
-    // 현재 지갑 세션 쿠키 획득
-    const cookieStore = await cookies()
-    const walletAddress = cookieStore.get('wallet_address')?.value || null
-
-    // DB 기록
+    // 데이터베이스 적재
     const { error: dbError } = await supabase
       .from('emojis')
       .insert({
-        uuid: uuid,
-        style_type: style,
-        file_path: fileName,
-        creator_wallet: walletAddress ? walletAddress.toLowerCase() : null,
-        owner_wallet: walletAddress ? walletAddress.toLowerCase() : null
+        uuid: emojiUuid,
+        style_type: styleType, // Webtoon, Pixel, 3D Clay 화풍 저장 (정합성 보정)
+        file_path: filePath,
+        creator_wallet: userWallet === 'guest' ? null : userWallet.toLowerCase(),
+        owner_wallet: userWallet === 'guest' ? null : userWallet.toLowerCase(),
       })
 
-    if (dbError) {
-      throw new Error(`Database insert failed: ${dbError.message}`)
-    }
+    if (dbError) throw dbError
 
-    return NextResponse.json({ status: 'success', uuid: uuid })
+    return NextResponse.json({ status: 'success', uuid: emojiUuid })
 
   } catch (error: any) {
-    console.error('Generate Route error:', error)
+    console.error('Generation engine error:', error)
     return NextResponse.json({ status: 'error', message: error.message || '이모티콘 생성 도중 에러가 발생했습니다.' }, { status: 500 })
   }
-}
-
-/**
- * Gemini 1.5 Flash와 Imagen 3.0 API 연동을 통한 이미지 분석 및 재생성
- */
-async function callGeminiImageToImage(
-  imageBuffer: Buffer,
-  mimeType: string,
-  style: string,
-  customText: string,
-  localizationPrompt: string,
-  apiKey: string
-): Promise<Buffer> {
-  // 1단계: Gemini Flash 이미지 분석 및 영어 프롬프트 추출
-  const analysisUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`
-
-  const styleInstructions: Record<string, string> = {
-    trendy: "Trendy Style: Cute, round-shaped bread cat (식빵냥) yellow/cream-colored kitten style. Warm-toned and soft outlines, showing comically flat or emotional faces.",
-    senior: "Senior Style: Soft teddy bear style. Warm brown/beige tones, cute cozy vibes, showing warm encouragements or positive greetings.",
-    office: "Office Style: Cute bunny with slight dark circles under the eyes, showing relatable workplace emotions like Monday blues, keyboard typing, or eager notifications."
-  }
-
-  let promptText = "Analyze the uploaded image. Analyze its shape, main features, colors, and pose. Then, rewrite a detailed English prompt to recreate this character as a cute individual emoji sticker using the following style guidelines and target market localization prompt.\n"
-  promptText += `Style Guidelines: ${styleInstructions[style] || styleInstructions.trendy}\n`
-  promptText += `Localization Target Guidelines: ${localizationPrompt}\n`
-  if (customText) {
-    promptText += `Custom Situational Text to reflect in design: ${customText}\n`
-  }
-  promptText += "Output format: Write exactly ONE descriptive English sentence starting with 'An emoticon sticker of...'"
-
-  const analysisPayload = {
-    contents: [
-      {
-        parts: [
-          { text: promptText },
-          {
-            inlineData: {
-              mimeType: mimeType,
-              data: imageBuffer.toString('base64')
-            }
-          }
-        ]
-      }
-    ]
-  }
-
-  const analysisResponse = await fetch(analysisUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(analysisPayload)
-  })
-
-  if (!analysisResponse.ok) {
-    throw new Error(`Gemini Analysis API failed with status ${analysisResponse.status}`)
-  }
-
-  const analysisRes = await analysisResponse.json()
-  const generatedPrompt = analysisRes.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || ''
-
-  if (!generatedPrompt) {
-    throw new Error("Failed to extract analysis prompt from Gemini Flash")
-  }
-
-  // 2단계: Imagen 3.0 API 호출
-  const imagenUrl = `https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:generateImages?key=${apiKey}`
-  const finalPrompt = `${generatedPrompt}, cute chibi sticker design, vector art style, isolated on clean solid white background, high resolution, 2d vector style`
-
-  const imagenPayload = {
-    prompt: finalPrompt,
-    numberOfImages: 1,
-    outputMimeType: 'image/png',
-    aspectRatio: '1:1'
-  }
-
-  const imagenResponse = await fetch(imagenUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(imagenPayload)
-  })
-
-  if (!imagenResponse.ok) {
-    throw new Error(`Imagen API failed with status ${imagenResponse.status}`)
-  }
-
-  const imagenRes = await imagenResponse.json()
-  const base64ImageBytes = imagenRes.generatedImages?.[0]?.image?.imageBytes
-
-  if (!base64ImageBytes) {
-    throw new Error("Imagen API returned no image bytes")
-  }
-
-  return Buffer.from(base64ImageBytes, 'base64')
-}
-
-/**
- * sharp 라이브러리를 활용해 로컬 화풍 필터 가공 (Fallback 엔진)
- */
-async function applyLocalSharpFilter(imageBuffer: Buffer, style: string): Promise<Buffer> {
-  const pipeline = sharp(imageBuffer)
-
-  // 간단한 스타일링 컬러 모듈레이션
-  if (style === 'trendy') {
-    // 따뜻한 톤
-    pipeline.modulate({ saturation: 1.2 }).tint({ r: 255, g: 235, b: 200 })
-  } else if (style === 'senior') {
-    // 아늑한 톤
-    pipeline.modulate({ saturation: 0.9, brightness: 1.05 }).tint({ r: 240, g: 220, b: 200 })
-  } else if (style === 'office') {
-    // 차분하고 대비가 살짝 있는 오피스 느낌
-    pipeline.modulate({ saturation: 0.8, hue: 180 }).tint({ r: 200, g: 230, b: 255 })
-  }
-
-  return await pipeline.png().toBuffer()
-}
-
-/**
- * 카카오톡 공식 규격 변환: 360x360 px, 투명 배경 PNG, SVG 텍스트 오버레이 합성
- */
-async function formatToKakaoSpecification(imageBuffer: Buffer, text: string, style: string): Promise<Buffer> {
-  // 1. 이미지를 360x360 크기 내로 비율 유지하며 리사이징 및 투명 여백 채우기
-  const resized = await sharp(imageBuffer)
-    .resize(360, 360, {
-      fit: 'contain',
-      background: { r: 0, g: 0, b: 0, alpha: 0 }
-    })
-    .png()
-    .toBuffer()
-
-  if (!text) {
-    return resized
-  }
-
-  // 2. 텍스트 합성용 SVG 생성
-  let textColor = '#FFFFFF'
-  if (style === 'trendy') {
-    textColor = '#FFE664'
-  } else if (style === 'office') {
-    textColor = '#82F0FF'
-  }
-
-  // SVG 텍스트 오버레이
-  const svgText = `
-    <svg width="360" height="360">
-      <style>
-        .text {
-          fill: ${textColor};
-          stroke: #000000;
-          stroke-width: 4px;
-          stroke-linejoin: round;
-          font-family: sans-serif;
-          font-size: 22px;
-          font-weight: 800;
-          text-anchor: middle;
-        }
-      </style>
-      <text x="180" y="325" class="text">${text}</text>
-    </svg>
-  `
-
-  const textBuffer = Buffer.from(svgText)
-
-  // 3. 텍스트 오버레이 합성
-  return await sharp(resized)
-    .composite([{ input: textBuffer, blend: 'over' }])
-    .png()
-    .toBuffer()
 }
