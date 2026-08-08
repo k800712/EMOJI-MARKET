@@ -15,24 +15,30 @@ export interface Database {
           nonce: string
           nonce_expires_at: string
           nickname: string | null
+          points: number
           created_at: string | null
           updated_at: string | null
+          kakao_id: string | null
         }
         Insert: {
           wallet_address: string
           nonce: string
           nonce_expires_at: string
           nickname?: string | null
+          points?: number
           created_at?: string | null
           updated_at?: string | null
+          kakao_id?: string | null
         }
         Update: {
           wallet_address?: string
           nonce?: string
           nonce_expires_at?: string
           nickname?: string | null
+          points?: number
           created_at?: string | null
           updated_at?: string | null
+          kakao_id?: string | null
         }
         Relationships: []
       }
@@ -107,6 +113,40 @@ export interface Database {
           created_at?: string | null
         }
         Relationships: []
+      }
+      point_transactions: {
+        Row: {
+          id: number
+          wallet_address: string
+          amount: number
+          transaction_type: string
+          description: string
+          created_at: string
+        }
+        Insert: {
+          id?: number
+          wallet_address: string
+          amount: number
+          transaction_type: string
+          description: string
+          created_at?: string
+        }
+        Update: {
+          id?: number
+          wallet_address?: string
+          amount?: number
+          transaction_type?: string
+          description?: string
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "point_transactions_wallet_address_fkey"
+            columns: ["wallet_address"]
+            referencedRelation: "web3_users"
+            referencedColumns: ["wallet_address"]
+          }
+        ]
       }
     }
     Views: {

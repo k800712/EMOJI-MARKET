@@ -44,6 +44,8 @@ export async function POST(req: NextRequest) {
     const situationPrompt = (formData.get('situation_prompt') as string) || ''
     const situationText = (formData.get('situation_text') as string) || ''
     const customText = (formData.get('text') as string) || ''
+    const quantity = Number(formData.get('quantity') || '1')
+    const taskIndex = Number(formData.get('task_index') || '0')
 
     if (!file) {
       return NextResponse.json({ status: 'error', message: '파일이 업로드되지 않았습니다.' }, { status: 400 })
@@ -51,6 +53,29 @@ export async function POST(req: NextRequest) {
 
     const arrayBuffer = await file.arrayBuffer()
     const inputBuffer = Buffer.from(arrayBuffer)
+
+    // ----------------------------------------------------
+    // STEP 0: 유저 포인트 검증 로직 (보유 포인트 부족 시 AI 호출 차단)
+    // ----------------------------------------------------
+    if (userWallet !== 'guest') {
+      const { data: userRecord, error: userFetchError } = await supabase
+        .from('web3_users')
+        .select('points')
+        .eq('wallet_address', userWallet.toLowerCase())
+        .single()
+
+      if (userFetchError || !userRecord) {
+        return NextResponse.json({ status: 'error', message: '가입된 지갑 회원 정보가 존재하지 않습니다.' }, { status: 403 })
+      }
+
+      // 첫 번째 이미지 생성 요청(taskIndex === 0) 시점에 전체 생성량(quantity)에 대한 보유 포인트를 선검증
+      if (taskIndex === 0 && (userRecord.points ?? 0) < quantity) {
+        return NextResponse.json({ 
+          status: 'error', 
+          message: `포인트가 부족합니다. 보유: ${userRecord.points ?? 0}P / 필요: ${quantity}P` 
+        }, { status: 403 })
+      }
+    }
 
     // ----------------------------------------------------
     // STEP 1: Gemini 1.5를 사용한 원본 이미지 멀티모달 분석
@@ -281,6 +306,36 @@ export async function POST(req: NextRequest) {
       })
 
     if (dbError) throw dbError
+
+    // 지갑 회원이고 첫 번째 태스크(taskIndex === 0)인 경우에 한해 전체 quantity 분량 일괄 선차감 수행
+    if (userWallet !== 'guest' && taskIndex === 0) {
+      const { data: currentUser } = await supabase
+        .from('web3_users')
+        .select('points')
+        .eq('wallet_address', userWallet.toLowerCase())
+        .single()
+
+      if (currentUser) {
+        const nextPoints = Math.max(0, (currentUser.points ?? 0) - quantity)
+        await supabase
+          .from('web3_users')
+          .update({
+            points: nextPoints,
+            updated_at: new Date().toISOString()
+          })
+          .eq('wallet_address', userWallet.toLowerCase())
+
+        // 포인트 차감 거래 내역 1회 일괄 기록
+        await supabase
+          .from('point_transactions')
+          .insert({
+            wallet_address: userWallet.toLowerCase(),
+            amount: -quantity,
+            transaction_type: 'use',
+            description: `${styleType} 이모티콘 ${quantity}개 생성`
+          })
+      }
+    }
 
     return NextResponse.json({ status: 'success', uuid: emojiUuid })
 

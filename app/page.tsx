@@ -13,7 +13,12 @@ import {
   Bell, 
   Layers,
   Sparkles,
-  Trash2
+  Trash2,
+  Plus,
+  Coins,
+  CreditCard,
+  Zap,
+  CheckCircle2
 } from 'lucide-react'
 import WalletConnect from '@/components/WalletConnect'
 import EmojiKeyboardSelector from '@/components/EmojiKeyboardSelector'
@@ -69,6 +74,204 @@ export default function Home() {
   const [sliderPos, setSliderPos] = useState<number>(50)
   const [isSliderVisible, setIsSliderVisible] = useState<boolean>(false)
   const [activeSetIndex, setActiveSetIndex] = useState<number>(0)
+
+  // 포인트 경제 모델 상태
+  const [walletAddress, setWalletAddress] = useState<string | null>(null)
+  const [points, setPoints] = useState<number>(0)
+  const [generateQty, setGenerateQty] = useState<number>(6) // 기본 수량 6개
+  const [showRechargeModal, setShowRechargeModal] = useState<boolean>(false)
+  const [rechargeStep, setRechargeStep] = useState<'plan' | 'loading' | 'success'>('plan')
+  const [selectedPackage, setSelectedPackage] = useState<string>('starter')
+  const [pointHistory, setPointHistory] = useState<any[]>([])
+
+  // 카카오 로그인 및 모의 결제 상태
+  const [showKakaoModal, setShowKakaoModal] = useState<boolean>(false)
+  const [showLoginModal, setShowLoginModal] = useState<boolean>(false) // 하이브리드 로그인 통합 창
+  const [isConnecting, setIsConnecting] = useState<boolean>(false)
+  const [kakaoNickname, setKakaoNickname] = useState<string>('')
+  const [kakaoIdInput, setKakaoIdInput] = useState<string>('')
+  const [paymentMethod, setPaymentMethod] = useState<string>('toss') // 'toss' | 'kakao' | 'culture'
+
+  useEffect(() => {
+    const stored = localStorage.getItem('wallet_session')
+    if (stored) {
+      setWalletAddress(stored)
+      fetchPoints(stored)
+    }
+  }, [])
+
+  const connectWallet = async () => {
+    if (isConnecting) return
+    setIsConnecting(true)
+
+    try {
+      if (!window.ethereum) {
+        alert('MetaMask 또는 지원되는 Web3 지갑을 설치해 주세요!')
+        setIsConnecting(false)
+        return
+      }
+
+      // 1. MetaMask 계정 연결 요청
+      const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' })
+      const address = accounts[0]
+      if (!address) {
+        throw new Error('연결된 지갑 주소가 존재하지 않습니다.')
+      }
+
+      // 2. 백엔드 난스(Nonce) 획득
+      const nonceRes = await fetch(`/api/auth/nonce?address=${address}`)
+      const nonceData = await nonceRes.json()
+
+      if (nonceData.status !== 'success' || !nonceData.nonce) {
+        throw new Error(nonceData.message || '임시 서명 메시지 발급 실패')
+      }
+
+      const nonceMessage = nonceData.nonce
+
+      // 3. 지갑 서명 요청 (personal_sign)
+      const signature = await window.ethereum.request({
+        method: 'personal_sign',
+        params: [nonceMessage, address],
+      })
+
+      // 4. 서명 검증 및 로그인 처리
+      const loginRes = await fetch('/api/auth/wallet', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          address: address,
+          signature: signature,
+          nonce: nonceMessage
+        })
+      })
+
+      const loginData = await loginRes.json()
+      if (loginData.status === 'success') {
+        setWalletAddress(address)
+        localStorage.setItem('wallet_session', address)
+        fetchPoints(address)
+        setShowLoginModal(false)
+      } else {
+        alert(`로그인 실패: ${loginData.message}`)
+      }
+
+    } catch (error: any) {
+      console.error('Wallet connect error:', error)
+      alert(error.message || '지갑 서명 검증 도중 에러가 발생했습니다.')
+    } finally {
+      setIsConnecting(false)
+    }
+  }
+
+  const disconnectWallet = async () => {
+    setWalletAddress(null)
+    setPoints(0)
+    setPointHistory([])
+    localStorage.removeItem('wallet_session')
+    
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' })
+    } catch (e) {
+      console.error(e)
+    }
+  }
+
+  // 모의 카카오 간편 소셜 로그인 처리 함수
+  const handleKakaoLogin = async (id: string, name: string) => {
+    if (!id || !name) {
+      alert('닉네임과 카카오 ID를 입력해 주세요!')
+      return
+    }
+
+    try {
+      const res = await fetch('/api/auth/kakao', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ kakaoId: id, nickname: name })
+      })
+      const data = await res.json()
+      if (data.status === 'success') {
+        setWalletAddress(data.address)
+        localStorage.setItem('wallet_session', data.address)
+        fetchPoints(data.address)
+        setShowKakaoModal(false)
+        
+        // 햅틱 피드백 기동
+        if (typeof navigator !== 'undefined' && navigator.vibrate) {
+          navigator.vibrate([100, 50, 100])
+        }
+      } else {
+        alert(`로그인 실패: ${data.message}`)
+      }
+    } catch (e) {
+      console.error('Kakao login error:', e)
+      alert('카카오 로그인 중 오류가 발생했습니다.')
+    }
+  }
+
+  // 포인트 거래 내역 조회 API
+  const fetchPointHistory = async (addr: string) => {
+    try {
+      const res = await fetch(`/api/points/history?wallet_address=${addr}`)
+      const data = await res.json()
+      if (data.status === 'success') {
+        setPointHistory(data.data || [])
+      }
+    } catch (e) {
+      console.error('Failed to fetch point history', e)
+    }
+  }
+
+  // 포인트 조회 API
+  const fetchPoints = async (addr: string) => {
+    try {
+      const res = await fetch(`/api/user/points?wallet=${addr}`)
+      const data = await res.json()
+      if (data.status === 'success') {
+        setPoints(data.points)
+        fetchPointHistory(addr) // 거래 내역 실시간 연쇄 갱신
+      }
+    } catch (e) {
+      console.error('Failed to fetch points', e)
+    }
+  }
+
+  // 가상 결제 토스 충전 기능
+  const handleRecharge = async (packageId: string) => {
+    if (!walletAddress) return
+    setRechargeStep('loading')
+    
+    // Toss 결제창 성공 모션 연출 1.5초 딜레이
+    await new Promise(r => setTimeout(r, 1500))
+
+    try {
+      const res = await fetch('/api/user/recharge', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          wallet: walletAddress,
+          packageId
+        })
+      })
+      const data = await res.json()
+      if (data.status === 'success') {
+        setPoints(data.points)
+        setRechargeStep('success')
+        
+        // 햅틱 진동 작동 (iOS/안드로이드 피드백 오마주)
+        if (typeof navigator !== 'undefined' && navigator.vibrate) {
+          navigator.vibrate([100, 50, 100])
+        }
+      } else {
+        alert(`충전 실패: ${data.message}`)
+        setRechargeStep('plan')
+      }
+    } catch (e) {
+      console.error('Recharge error:', e)
+      alert('충전 중 오류가 발생했습니다.')
+      setRechargeStep('plan')
+    }
+  }
 
   // 24종씩 논리 묶음(청크) 처리
   const emojiSets = useMemo(() => {
@@ -191,15 +394,16 @@ export default function Home() {
 
     setIsGenerating(true)
     setServerBusy(false)
-    setLoadingStepText('1/24번째 이모티콘 굽는 중... (대기열 등록)')
+    setLoadingStepText(`1/${generateQty}번째 이모티콘 굽는 중... (대기열 등록)`)
     setLoadingPercentText(0)
 
     const wallet = localStorage.getItem('wallet_session') || 'guest'
-    const tasks = [...KAKAO_SITUATIONS]
+    // 선택된 수량만큼 상황극 프롬프트를 슬라이싱하여 큐 구성
+    const tasks = KAKAO_SITUATIONS.slice(0, generateQty)
     let completedCount = 0
     const totalTasks = tasks.length
     const concurrency = 2
-    const queue = [...tasks]
+    const queue = tasks.map((task, idx) => ({ ...task, taskIndex: idx }))
 
     const runWorker = async () => {
       while (queue.length > 0) {
@@ -215,6 +419,8 @@ export default function Home() {
           formData.append('style_type', selectedStyle) // Webtoon, Pixel, 3D Clay
           formData.append('target_country', selectedCountry)
           formData.append('user_wallet', wallet)
+          formData.append('quantity', generateQty.toString()) // 사전 쿼타 검증용으로 전체 개수 전송
+          formData.append('task_index', task.taskIndex.toString()) // 첫 요청 시에만 선차감 처리용 인덱스 전송
           formData.append('situation_prompt', task.prompt)
           formData.append('situation_text', task.text)
           formData.append('text', customPrompt) // 커스텀 전체 문구 있을 시 오버라이드
@@ -227,6 +433,8 @@ export default function Home() {
           const result = await response.json()
           if (result.status === 'success') {
             loadEmojiToCanvas(result.uuid, true) // 실시간 캔버스 표출 및 목록 갱신
+            // 개별 성공할 때마다 유저 포인트 즉각 차감 동기화 연출
+            if (wallet !== 'guest') fetchPoints(wallet)
           } else {
             console.error(`Sticker ${task.id} failed: ${result.message}`)
           }
@@ -238,9 +446,9 @@ export default function Home() {
           setLoadingPercentText(percent)
           
           if (completedCount < totalTasks) {
-            setLoadingStepText(`${completedCount + 1}/24번째 이모티콘 가공 중...`)
+            setLoadingStepText(`${completedCount + 1}/${generateQty}번째 이모티콘 가공 중...`)
           } else {
-            setLoadingStepText('24종 이모티콘 패키지가 완성되었습니다! 🎉')
+            setLoadingStepText(`${generateQty}종 이모티콘 패키지가 완성되었습니다! 🎉`)
           }
         }
       }
@@ -252,8 +460,12 @@ export default function Home() {
 
     if (notificationGranted) {
       new Notification('이모지 마켓', {
-        body: '나만의 카카오 제안 규격 24종 이모티콘 패키지 빌드가 모두 완료되었습니다!',
+        body: `나만의 카카오 제안 규격 ${generateQty}종 이모티콘 패키지 빌드가 모두 완료되었습니다!`,
       })
+    }
+
+    if (wallet !== 'guest') {
+      fetchPoints(wallet)
     }
 
     setTimeout(() => {
@@ -378,11 +590,41 @@ export default function Home() {
             </div>
           </div>
           <div className="flex items-center gap-4">
-            <span className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-blue-500/10 text-blue-600 border border-blue-500/20">
+            {!walletAddress ? (
+              <button
+                type="button"
+                onClick={() => setShowLoginModal(true)}
+                className="flex items-center gap-1.5 bg-[#FEE500] hover:bg-[#F0D200] text-[#191919] px-3.5 py-1.5 rounded-2xl text-xs font-black shadow-sm transition-all duration-300 animate-pulse active:scale-95"
+              >
+                <span>로그인 시 무료 3P 선물 🎁</span>
+              </button>
+            ) : (
+              <div className="flex items-center gap-1.5 bg-gradient-to-r from-emerald-50 to-teal-50 text-emerald-700 px-3.5 py-1.5 rounded-2xl text-xs font-extrabold border border-emerald-100/70 shadow-sm shadow-emerald-500/5">
+                <Coins className="w-3.5 h-3.5 text-emerald-500 animate-pulse" />
+                <span>내 포인트: {points} P</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRechargeStep('plan')
+                    setShowRechargeModal(true)
+                  }}
+                  className="ml-1 bg-emerald-500 hover:bg-emerald-600 text-white rounded-full p-0.5 transition-colors focus:outline-none focus:ring-2 focus:ring-emerald-400 active:scale-95"
+                  title="포인트 충전"
+                >
+                  <Plus className="w-2.5 h-2.5 font-black" />
+                </button>
+              </div>
+            )}
+            <span className="hidden md:inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-blue-500/10 text-blue-600 border border-blue-500/20">
               <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-ping"></span>
-              Next.js Full-Stack App
+              소셜 & Web3 통합 App
             </span>
-            <WalletConnect />
+            <WalletConnect
+              walletAddress={walletAddress}
+              isConnecting={isConnecting}
+              onConnect={() => setShowLoginModal(true)}
+              onDisconnect={disconnectWallet}
+            />
           </div>
         </div>
       </header>
@@ -553,18 +795,81 @@ export default function Home() {
               <p className="text-[11px] text-gray-400 mt-2">이모티콘 하단에 합성될 텍스트를 입력해 주세요. 나눔고딕 Bold 기반 산돌 스타일 한글 폰트가 자동 적용됩니다.</p>
             </div>
 
+            {/* Quantity Selector */}
+            <div className="bg-white border border-gray-200/60 rounded-3xl p-6 shadow-xl shadow-gray-200/30">
+              <h2 className="text-md font-bold mb-4 flex items-center gap-2 text-gray-800">
+                <span className="w-1 h-4 bg-brand-primary rounded-full"></span>
+                생성 수량 및 소모 포인트 설정
+              </h2>
+              <div className="bg-gray-100 p-1 rounded-2xl flex gap-1 border border-gray-200/50">
+                {[1, 6, 12, 24].map((qty) => (
+                  <button
+                    key={qty}
+                    type="button"
+                    onClick={() => setGenerateQty(qty)}
+                    className={`flex-1 text-center py-2.5 rounded-xl text-xs font-bold transition-all duration-300 ${
+                      generateQty === qty
+                        ? 'bg-white text-gray-800 shadow-md shadow-gray-200/30 transform scale-[1.02]'
+                        : 'text-gray-500 hover:text-gray-800'
+                    }`}
+                  >
+                    {qty === 24 ? '24개 풀세트' : `${qty}개`}
+                    <span className="block text-[9px] opacity-75 font-normal mt-0.5">{qty}P 소모</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
             {/* Submit Button */}
             <button 
-              onClick={triggerGenerate}
-              disabled={!isFormValid}
-              className={`w-full py-4 font-bold rounded-2xl flex items-center justify-center gap-2 transition-all duration-300 text-md ${
-                isFormValid 
-                  ? 'bg-gradient-to-r from-brand-primary to-brand-secondary hover:from-blue-600 hover:to-indigo-600 text-white cursor-pointer active:scale-[0.98] shadow-lg shadow-blue-500/25' 
-                  : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+              onClick={() => {
+                if (!walletAddress) {
+                  setShowLoginModal(true)
+                  return
+                }
+                if (points < generateQty) {
+                  setRechargeStep('plan')
+                  setShowRechargeModal(true)
+                  return
+                }
+                triggerGenerate()
+              }}
+              disabled={isGenerating || (walletAddress && !isFormValid)}
+              className={`w-full py-4.5 font-bold rounded-2xl flex items-center justify-center gap-2 transition-all duration-300 text-md select-none ${
+                isGenerating || (walletAddress && !isFormValid)
+                  ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                  : !walletAddress
+                    ? 'bg-[#FEE500] hover:bg-[#F0D200] text-[#191919] font-black active:scale-[0.98] shadow-lg shadow-yellow-500/10 cursor-pointer'
+                    : points < generateQty
+                      ? 'bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white cursor-pointer active:scale-[0.98] shadow-lg shadow-orange-500/20'
+                      : 'bg-gradient-to-r from-brand-primary to-brand-secondary hover:from-blue-600 hover:to-indigo-600 text-white cursor-pointer active:scale-[0.98] shadow-lg shadow-blue-500/25'
               }`}
             >
-              <Sparkles className="w-5 h-5" />
-              AI 이모티콘 빌드 시작
+              {isGenerating ? (
+                <>
+                  <div className="w-5 h-5 rounded-full border-2 border-white/30 border-t-white animate-spin"></div>
+                  {loadingStepText}
+                </>
+              ) : (
+                <>
+                  {!walletAddress ? (
+                    <>
+                      <span className="text-lg">🎉</span>
+                      3초 만에 로그인하고 무료 이모티콘 3개 받기
+                    </>
+                  ) : points < generateQty ? (
+                    <>
+                      <Zap className="w-5 h-5 animate-bounce" />
+                      ⚠️ 포인트가 부족합니다 (포인트 충전하기)
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="w-5 h-5" />
+                      ✨ {generateQty}개 이모티콘 즉시 생성 ({generateQty} P 소모)
+                    </>
+                  )}
+                </>
+              )}
             </button>
 
           </section>
@@ -866,6 +1171,350 @@ export default function Home() {
                   동의하고 알림받기
                 </button>
               </div>
+            </div>
+
+          </div>
+        </div>
+      )}
+      {/* Toss Style Recharge Modal */}
+      {showRechargeModal && (
+        <div className="fixed inset-0 bg-gray-950/60 backdrop-blur-md flex items-center justify-center z-50 p-4 transition-all duration-300">
+          <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl relative border border-gray-100/50 transform scale-100 transition-all duration-500 animate-slide-up">
+            
+            {/* 닫기 버튼 */}
+            <button
+              type="button"
+              onClick={() => {
+                setShowRechargeModal(false)
+                setRechargeStep('plan')
+              }}
+              className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition-colors p-1"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            {rechargeStep === 'plan' && (
+              <div className="space-y-6">
+                <div>
+                  <h3 className="text-lg font-extrabold text-gray-900 flex items-center gap-1.5">
+                    <Zap className="text-amber-500 w-5 h-5 fill-amber-500" />
+                    포인트 간편 충전
+                  </h3>
+                  <p className="text-xs text-gray-400 mt-1">포인트를 즉시 충전하여 대량 생성을 시작해 보세요.</p>
+                </div>
+
+                {/* 패키지 카드 목록 */}
+                <div className="grid grid-cols-2 gap-2.5">
+                  {[
+                    { id: 'starter', points: 10, price: '1,900원', tag: '인기' },
+                    { id: 'value', points: 20, price: '3,500원', tag: null },
+                    { id: 'creator', points: 50, price: '7,900원', tag: '가성비' },
+                    { id: 'pro', points: 100, price: '14,900원', tag: null },
+                  ].map((pkg) => (
+                    <div
+                      key={pkg.id}
+                      onClick={() => setSelectedPackage(pkg.id)}
+                      className={`border p-3.5 rounded-2xl cursor-pointer flex flex-col justify-between transition-all duration-300 relative overflow-hidden select-none ${
+                        selectedPackage === pkg.id
+                          ? 'border-brand-primary bg-blue-50/20 shadow-md ring-2 ring-blue-500/10'
+                          : 'border-gray-200 hover:border-gray-300 bg-white'
+                      }`}
+                    >
+                      <div className="flex justify-between items-start w-full">
+                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
+                          selectedPackage === pkg.id ? 'bg-brand-primary text-white' : 'bg-gray-100 text-gray-500'
+                        }`}>
+                          <Coins className="w-4 h-4" />
+                        </div>
+                        {pkg.tag && (
+                          <span className="text-[8px] font-extrabold bg-blue-100 text-brand-primary px-1.5 py-0.5 rounded-md uppercase tracking-wider">
+                            {pkg.tag}
+                          </span>
+                        )}
+                      </div>
+                      <div className="mt-3">
+                        <div className="text-xs font-bold text-gray-800">
+                          {pkg.points} P 충전
+                        </div>
+                        <div className="text-[10px] text-gray-900 font-extrabold mt-1">{pkg.price}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* 10대 소셜 결제수단 선택 영역 */}
+                <div className="space-y-2">
+                  <label className="text-[10px] font-extrabold text-gray-400 block">결제수단 선택</label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {[
+                      { id: 'toss', label: '토스페이', color: 'border-blue-500 bg-blue-50/30 text-blue-600' },
+                      { id: 'kakao', label: '카카오페이', color: 'border-yellow-400 bg-yellow-50/30 text-yellow-700' },
+                      { id: 'culture', label: '문화상품권', color: 'border-amber-600 bg-amber-50/20 text-amber-800' }
+                    ].map((method) => (
+                      <button
+                        key={method.id}
+                        type="button"
+                        onClick={() => setPaymentMethod(method.id)}
+                        className={`py-2 rounded-xl text-[10px] font-bold text-center border transition-all cursor-pointer ${
+                          paymentMethod === method.id
+                            ? `${method.color} ring-2 ring-opacity-20`
+                            : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300'
+                        }`}
+                      >
+                        {method.id === 'toss' ? '🔵 ' : method.id === 'kakao' ? '💛 ' : '🎫 '}
+                        {method.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => handleRecharge(selectedPackage)}
+                  className="w-full py-3.5 bg-brand-primary hover:bg-blue-600 text-white rounded-2xl font-bold text-sm shadow-lg shadow-blue-500/20 transition-all flex items-center justify-center gap-1.5 active:scale-[0.98]"
+                >
+                  <CreditCard className="w-4 h-4" />
+                  {paymentMethod === 'toss'
+                    ? '토스페이로 안전 결제하기'
+                    : paymentMethod === 'kakao'
+                      ? '카카오페이로 3초 결제하기'
+                      : '문화상품권 PIN 번호로 충전하기'}
+                </button>
+
+                {/* Toss Style 포인트 이용 내역 타임라인 */}
+                <div className="border-t border-gray-100 pt-5">
+                  <h4 className="text-xs font-extrabold text-gray-800 mb-3 flex items-center gap-1.5">
+                    <Coins className="w-3.5 h-3.5 text-gray-400" />
+                    포인트 이용 내역
+                  </h4>
+                  
+                  {pointHistory.length === 0 ? (
+                    <div className="py-7 text-center bg-gray-50/50 rounded-2xl border border-dashed border-gray-200/60 flex flex-col items-center justify-center gap-1">
+                      <span className="text-lg">🎉</span>
+                      <p className="text-[10px] font-bold text-gray-500">아직 포인트 거래 내역이 없습니다.</p>
+                      <p className="text-[8px] text-gray-400">첫 이모티콘을 만들고 보너스를 확인해보세요!</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3 max-h-[160px] overflow-y-auto pr-1 select-none scrollbar-thin">
+                      {pointHistory.map((tx) => {
+                        let icon = '🎨'
+                        let amountColor = 'text-gray-900'
+                        let amountSign = tx.amount > 0 ? `+${tx.amount}` : `${tx.amount}`
+                        
+                        if (tx.transaction_type === 'charge') {
+                          icon = '💳'
+                          amountColor = 'text-blue-600 font-black'
+                        } else if (tx.transaction_type === 'gift') {
+                          icon = '🎉'
+                          amountColor = 'text-purple-600 font-black'
+                        }
+                        
+                        const txDate = new Date(tx.created_at)
+                        const formattedDate = `${String(txDate.getMonth() + 1).padStart(2, '0')}.${String(txDate.getDate()).padStart(2, '0')} ${String(txDate.getHours()).padStart(2, '0')}:${String(txDate.getMinutes()).padStart(2, '0')}`
+
+                        return (
+                          <div key={tx.id} className="flex justify-between items-center gap-3">
+                            <div className="flex items-center gap-2.5">
+                              <div className="w-7.5 h-7.5 rounded-lg bg-gray-50 flex items-center justify-center text-xs border border-gray-100">
+                                {icon}
+                              </div>
+                              <div>
+                                <p className="text-[11px] font-bold text-gray-800 leading-tight">{tx.description}</p>
+                                <p className="text-[8px] text-gray-400 mt-0.5">{formattedDate}</p>
+                              </div>
+                            </div>
+                            <div className={`text-[11px] font-extrabold ${amountColor}`}>
+                              {amountSign} P
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {rechargeStep === 'loading' && (
+              <div className="py-12 flex flex-col items-center justify-center gap-6 text-center">
+                <div className="w-16 h-16 rounded-full border-4 border-blue-500/25 border-t-brand-primary animate-spin"></div>
+                <div className="space-y-1.5">
+                  <h4 className="text-md font-bold text-gray-900">
+                    {paymentMethod === 'toss'
+                      ? '토스페이 결제 승인 요청 중'
+                      : paymentMethod === 'kakao'
+                        ? '카카오페이 결제 승인 요청 중'
+                        : '문화상품권 PIN 번호 조회 중'}
+                  </h4>
+                  <p className="text-xs text-gray-400">결제창 안전 암호화 세션이 작동하고 있습니다.</p>
+                </div>
+              </div>
+            )}
+
+            {rechargeStep === 'success' && (
+              <div className="py-8 flex flex-col items-center justify-center gap-6 text-center animate-fade-in">
+                <div className="w-16 h-16 rounded-full bg-emerald-100/50 text-emerald-500 flex items-center justify-center border border-emerald-200/50 shadow-md shadow-emerald-500/10">
+                  <CheckCircle2 className="w-10 h-10 animate-scale-up" />
+                </div>
+                <div className="space-y-2">
+                  <h4 className="text-lg font-black text-gray-900">결제가 성공적으로 완료되었습니다!</h4>
+                  <p className="text-xs text-gray-500">
+                    충전된 포인트가 즉시 지급되었습니다.<br />
+                    <span className="font-extrabold text-brand-primary text-sm block mt-1">현재 포인트: {points} P</span>
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowRechargeModal(false)
+                    setRechargeStep('plan')
+                  }}
+                  className="w-full py-3.5 bg-gray-900 hover:bg-gray-800 text-white rounded-2xl font-bold text-sm shadow-md transition-all active:scale-[0.98]"
+                >
+                  확인 (이모티콘 구우러 가기)
+                </button>
+              </div>
+            )}
+
+          </div>
+        </div>
+      )}
+
+      {/* Hybrid Login Dialog Modal (투트랙 통합 로그인 관문) */}
+      {showLoginModal && (
+        <div className="fixed inset-0 bg-gray-950/60 backdrop-blur-md flex items-center justify-center z-50 p-4 transition-all duration-300">
+          <div className="bg-white rounded-3xl p-6 max-w-sm w-full shadow-2xl relative border border-gray-100/50 transform scale-100 transition-all duration-500 animate-slide-up space-y-6 text-center">
+            
+            {/* 닫기 버튼 */}
+            <button
+              type="button"
+              onClick={() => setShowLoginModal(false)}
+              className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition-colors p-1"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="flex flex-col items-center gap-3">
+              <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-brand-primary to-indigo-600 text-white flex items-center justify-center shadow-md">
+                <Smile className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-md font-black text-gray-900">로그인 방식 선택</h3>
+                <p className="text-xs text-gray-400 mt-1">간편 로그인 및 지갑 주소 매핑을 모두 지원합니다.</p>
+              </div>
+            </div>
+
+            <div className="space-y-3 pt-2">
+              {/* 카카오 소셜 로그인 버튼 */}
+              <button
+                type="button"
+                onClick={() => {
+                  setShowLoginModal(false)
+                  setShowKakaoModal(true)
+                }}
+                className="w-full py-3.5 bg-[#FEE500] hover:bg-[#F0D200] text-[#191919] font-black rounded-2xl text-xs transition-all active:scale-[0.98] shadow-sm shadow-yellow-500/10 flex items-center justify-center gap-2"
+              >
+                <span className="text-sm">💬</span>
+                카카오 계정으로 3초 로그인
+              </button>
+
+              {/* 메타마스크 지갑 연결 버튼 */}
+              <button
+                type="button"
+                onClick={connectWallet}
+                disabled={isConnecting}
+                className="w-full py-3.5 bg-[#f6851b]/10 hover:bg-[#f6851b]/20 text-[#f6851b] border border-[#f6851b]/20 font-black rounded-2xl text-xs transition-all active:scale-[0.98] flex items-center justify-center gap-2 disabled:opacity-50"
+              >
+                <span className="text-sm">🦊</span>
+                메타마스크 지갑 연결 (Web3)
+              </button>
+            </div>
+
+            <div className="text-[10px] text-gray-400 bg-gray-50 p-3 rounded-xl border border-gray-100 leading-relaxed text-left">
+              💡 <b>보이지 않는 Web3 안내:</b> 카카오 로그인 시 계정 ID를 기반으로 가상 이더리움 지갑 주소가 1:1 결정적(Deterministic)으로 매핑되어 지갑 설치 없이도 포인트와 스티커를 안전하게 보관할 수 있습니다.
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* Kakao Social Mock Login Modal */}
+      {showKakaoModal && (
+        <div className="fixed inset-0 bg-[#191919]/60 backdrop-blur-md flex items-center justify-center z-50 p-4 transition-all duration-300">
+          <div className="bg-white rounded-3xl p-6 max-w-sm w-full shadow-2xl relative border border-yellow-200/50 transform scale-100 transition-all duration-500 animate-slide-up">
+            
+            {/* 닫기 버튼 */}
+            <button
+              type="button"
+              onClick={() => {
+                setShowKakaoModal(false)
+                setKakaoNickname('')
+                setKakaoIdInput('')
+              }}
+              className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition-colors p-1"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="space-y-6 text-center">
+              <div className="flex flex-col items-center gap-3">
+                <div className="w-14 h-14 rounded-2xl bg-[#FEE500] flex items-center justify-center shadow-md">
+                  <span className="text-2xl">💬</span>
+                </div>
+                <div>
+                  <h3 className="text-lg font-black text-gray-900">카카오 3초 간편 가입</h3>
+                  <p className="text-xs text-gray-400 mt-1">지갑 설치 번거로움 없이 카카오 아이디로 즉시 시작하세요.</p>
+                </div>
+              </div>
+
+              {/* 입력 폼 */}
+              <div className="space-y-3 text-left">
+                <div>
+                  <label className="text-[10px] font-extrabold text-gray-400 block mb-1">사용할 닉네임</label>
+                  <input
+                    type="text"
+                    value={kakaoNickname}
+                    onChange={(e) => setKakaoNickname(e.target.value)}
+                    placeholder="예: 민지, 준우 등"
+                    className="w-full bg-gray-50 border border-gray-200 rounded-xl py-2.5 px-3 text-xs focus:outline-none focus:border-[#FEE500] transition-colors"
+                  />
+                </div>
+                <div>
+                  <div className="flex justify-between items-center mb-1">
+                    <label className="text-[10px] font-extrabold text-gray-400 block">카카오 고유 ID (숫자)</label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const randomId = Math.floor(100000000 + Math.random() * 900000000).toString()
+                        setKakaoIdInput(randomId)
+                        if (!kakaoNickname) {
+                          const names = ['학생냥', '춘식이', '라이언', '어피치', '중고딩냥', '급식곰']
+                          const randName = names[Math.floor(Math.random() * names.length)]
+                          setKakaoNickname(randName)
+                        }
+                      }}
+                      className="text-[9px] text-[#cca700] hover:text-yellow-600 font-extrabold"
+                    >
+                      🎲 랜덤 생성하기
+                    </button>
+                  </div>
+                  <input
+                    type="text"
+                    value={kakaoIdInput}
+                    onChange={(e) => setKakaoIdInput(e.target.value)}
+                    placeholder="9자리 이상의 카카오 회원 고유 번호"
+                    className="w-full bg-gray-50 border border-gray-200 rounded-xl py-2.5 px-3 text-xs focus:outline-none focus:border-[#FEE500] transition-colors"
+                  />
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => handleKakaoLogin(kakaoIdInput, kakaoNickname)}
+                className="w-full py-3.5 bg-[#FEE500] hover:bg-[#F0D200] text-[#191919] font-black rounded-2xl text-xs transition-all active:scale-[0.98] shadow-md shadow-yellow-500/10"
+              >
+                💬 카카오 계정으로 간편 시작 (무료 3P 즉시 지급)
+              </button>
             </div>
 
           </div>

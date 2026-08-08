@@ -54,6 +54,23 @@ export async function POST(req: NextRequest) {
       throw new Error(`Failed to update user session in DB: ${userError.message}`)
     }
 
+    // 최초 로그인(회원가입 완료) 시점에 웰컴 보너스 3P 거래 이력 1회 자동 생성
+    const { count } = await supabase
+      .from('point_transactions')
+      .select('*', { count: 'exact', head: true })
+      .eq('wallet_address', address.toLowerCase())
+
+    if (count === 0) {
+      await supabase
+        .from('point_transactions')
+        .insert({
+          wallet_address: address.toLowerCase(),
+          amount: 3,
+          transaction_type: 'gift',
+          description: '웰컴 가입 보너스 3P 지급'
+        })
+    }
+
     // 6. 보안 로그인 세션 쿠키 생성
     const cookieStore = await cookies()
     cookieStore.set('wallet_address', address.toLowerCase(), {
