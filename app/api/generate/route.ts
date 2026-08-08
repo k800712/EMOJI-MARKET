@@ -15,6 +15,9 @@ export async function POST(req: NextRequest) {
     const targetCountry = (formData.get('target_country') as string) || 'KR'
     const styleType = (formData.get('style_type') as string) || 'Webtoon'
     const userWallet = (formData.get('user_wallet') as string) || 'guest'
+    const situationPrompt = (formData.get('situation_prompt') as string) || ''
+    const situationText = (formData.get('situation_text') as string) || ''
+    const customText = (formData.get('text') as string) || ''
 
     if (!file) {
       return NextResponse.json({ status: 'error', message: '파일이 업로드되지 않았습니다.' }, { status: 400 })
@@ -84,7 +87,8 @@ export async function POST(req: NextRequest) {
     }
 
     // 최종 Imagen 3 전용 고화질 인풋 프롬프트 조립
-    const finalPrompt = `A premium mobile emoticon sticker of ${analyzedDescription}. ${stylePrompt}, ${emotionPrompt}, white thick sticker outline around the character, isolated on a pure #FFFFFF solid white background, high contrast, studio lighting.`
+    const actionPrompt = situationPrompt ? situationPrompt : 'posing cutout sticker'
+    const finalPrompt = `A premium mobile emoticon sticker of ${analyzedDescription}, ${actionPrompt}. ${stylePrompt}, ${emotionPrompt}, white thick sticker outline around the character, isolated on a pure #FFFFFF solid white background, high contrast, studio lighting.`
 
     // ----------------------------------------------------
     // STEP 3: Google Imagen 3 API를 사용한 고화질 이모티콘 생성
@@ -138,7 +142,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const highQualityProcessedBuffer = await sharp(rawData, {
+    const resizedPngBuffer = await sharp(rawData, {
       raw: {
         width: rawInfo.width,
         height: rawInfo.height,
@@ -152,6 +156,41 @@ export async function POST(req: NextRequest) {
       })
       .png({ compressionLevel: 9, quality: 100 })
       .toBuffer()
+
+    const textToSynthesize = customText || situationText
+    let highQualityProcessedBuffer = resizedPngBuffer
+
+    if (textToSynthesize) {
+      let textColor = '#FFFFFF'
+      if (styleType === 'Webtoon') {
+        textColor = '#FFE664' // 노랑
+      } else if (styleType === '3D Clay') {
+        textColor = '#82F0FF' // 하늘
+      }
+      
+      const svgText = `
+        <svg width="360" height="360">
+          <style>
+            .text {
+              fill: ${textColor};
+              stroke: #000000;
+              stroke-width: 5px;
+              stroke-linejoin: round;
+              font-family: sans-serif;
+              font-size: 24px;
+              font-weight: 900;
+              text-anchor: middle;
+            }
+          </style>
+          <text x="180" y="325" class="text">${textToSynthesize}</text>
+        </svg>
+      `
+      const textBuffer = Buffer.from(svgText)
+      highQualityProcessedBuffer = await sharp(resizedPngBuffer)
+        .composite([{ input: textBuffer, blend: 'over' }])
+        .png()
+        .toBuffer()
+    }
 
     // ----------------------------------------------------
     // STEP 5: Supabase Storage 업로드 & DB 영구 기록

@@ -24,6 +24,33 @@ interface HistoryItem {
   created_at: string
 }
 
+const KAKAO_SITUATIONS = [
+  { id: 1, text: "안녕!", prompt: "waving hand politely, smiling warmly, greeting" },
+  { id: 2, text: "사랑해💖", prompt: "making a big heart shape with hands, eyes showing affection" },
+  { id: 3, text: "흐앙😭", prompt: "weeping out a river of cartoon tears, looking deeply sad" },
+  { id: 4, text: "부글부글💢", prompt: "steaming in anger, red frustrated face, clenched fists" },
+  { id: 5, text: "굿모닝☀️", prompt: "waking up sleepily with a stretch, morning sunshine vibe" },
+  { id: 6, text: "졸려💤", prompt: "drooling while sleeping bubble pops out of nose" },
+  { id: 7, text: "대박!😱", prompt: "screaming in absolute shock, hands on cheeks like The Scream" },
+  { id: 8, text: "축하해🎉", prompt: "throwing colorful party poppers and confetti, dancing" },
+  { id: 9, text: "고마워🙏", prompt: "pressing hands together in polite gratitude, eyes glittering" },
+  { id: 10, text: "배고파🤤", prompt: "stomach rumbling, thinking about a dream bubble of juicy meat" },
+  { id: 11, text: "퇴근원츄🔥", prompt: "typing furiously on a burning keyboard at work, crying" },
+  { id: 12, text: "멘붕🤯", prompt: "mind blown, head exploding with cute sparkles, dizzy eyes" },
+  { id: 13, text: "지켜보고있다👁️", prompt: "squinting eyes suspiciously like a detective behind magnifier" },
+  { id: 14, text: "최고!👍", prompt: "giving a big confident double thumbs up with a huge grin" },
+  { id: 15, text: "노놉🙅", prompt: "crossing arms in an X shape, showing a firm refusal expression" },
+  { id: 16, text: "어색..😅", prompt: "sweating nervously, scratching back of the head with a dry smile" },
+  { id: 17, text: "돈벼락💸", prompt: "showering in falling dollar banknotes, looking rich and happy" },
+  { id: 18, text: "불금이다!🍻", prompt: "clinking draft beer mugs with a comically flushed happy face" },
+  { id: 19, text: "힘내요💪", prompt: "flexing tiny cute biceps, looking passionate and determined" },
+  { id: 20, text: "뒹굴뒹굴🛌", prompt: "lying down flat wrapped in a soft blanket, feeling extremely lazy" },
+  { id: 21, text: "감기조심😷", prompt: "wearing a white medical mask, feverish red cheeks, holding thermometer" },
+  { id: 22, text: "도망쳐🏃", prompt: "running away in panic, leaving a dust cloud behind, terrified" },
+  { id: 23, text: "오예!🕺", prompt: "dancing hysterically, throwing hands in the air, feeling ecstatic" },
+  { id: 24, text: "절받으세요🙇", prompt: "bowing deeply on the floor in traditional greeting pose" }
+]
+
 export default function Home() {
   const [uploadedFile, setUploadedFile] = useState<File | null>(null)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
@@ -129,63 +156,72 @@ export default function Home() {
     if (!uploadedFile || !selectedStyle) return
 
     setIsGenerating(true)
-    setServerBusy(Math.random() > 0.6)
-    setLoadingStepText('1단계: 대기열 등록 완료')
-    setLoadingPercentText(15)
+    setServerBusy(false)
+    setLoadingStepText('1/24번째 이모티콘 굽는 중... (대기열 등록)')
+    setLoadingPercentText(0)
 
-    let progress = 15
-    const interval = setInterval(() => {
-      if (progress < 90) {
-        progress += Math.floor(Math.random() * 8) + 2
-        if (progress >= 90) progress = 90
-        setLoadingPercentText(progress)
+    const wallet = localStorage.getItem('wallet_session') || 'guest'
+    const tasks = [...KAKAO_SITUATIONS]
+    let completedCount = 0
+    const totalTasks = tasks.length
+    const concurrency = 3
+    const queue = [...tasks]
 
-        if (progress > 45 && progress < 75) {
-          setLoadingStepText('2단계: AI 화풍 가공 및 텍스트 합성 중...')
-        } else if (progress >= 75) {
-          setLoadingStepText('3단계: Supabase 안전 백업 및 동기화 중...')
-        }
-      }
-    }, 450)
+    const runWorker = async () => {
+      while (queue.length > 0) {
+        const task = queue.shift()
+        if (!task) break
 
-    const formData = new FormData()
-    formData.append('emoji_image', uploadedFile)
-    formData.append('style', selectedStyle)
-    formData.append('target_country', selectedCountry)
-    formData.append('text', customPrompt)
+        try {
+          const formData = new FormData()
+          formData.append('emoji_image', uploadedFile)
+          formData.append('style_type', selectedStyle) // Webtoon, Pixel, 3D Clay
+          formData.append('target_country', selectedCountry)
+          formData.append('user_wallet', wallet)
+          formData.append('situation_prompt', task.prompt)
+          formData.append('situation_text', task.text)
+          formData.append('text', customPrompt) // 커스텀 전체 문구 있을 시 오버라이드
 
-    try {
-      const response = await fetch('/api/generate', {
-        method: 'POST',
-        body: formData,
-      })
-      const result = await response.json()
-      clearInterval(interval)
-
-      if (result.status === 'success') {
-        setLoadingPercentText(100)
-        setLoadingStepText('완료되었습니다!')
-        
-        if (notificationGranted) {
-          new Notification('이모지 마켓', {
-            body: '축하합니다! 나만의 스티커 가공이 완료되었습니다.',
-            icon: `/api/view?uuid=${result.uuid}`
+          const response = await fetch('/api/generate', {
+            method: 'POST',
+            body: formData,
           })
-        }
 
-        setTimeout(() => {
-          setIsGenerating(false)
-          loadEmojiToCanvas(result.uuid, true)
-        }, 500)
-      } else {
-        setIsGenerating(false)
-        alert('이모티콘 생성 실패: ' + result.message)
+          const result = await response.json()
+          if (result.status === 'success') {
+            loadEmojiToCanvas(result.uuid, true) // 실시간 캔버스 표출 및 목록 갱신
+          } else {
+            console.error(`Sticker ${task.id} failed: ${result.message}`)
+          }
+        } catch (e) {
+          console.error(`Sticker ${task.id} network error:`, e)
+        } finally {
+          completedCount++
+          const percent = Math.round((completedCount / totalTasks) * 100)
+          setLoadingPercentText(percent)
+          
+          if (completedCount < totalTasks) {
+            setLoadingStepText(`${completedCount + 1}/24번째 이모티콘 가공 중...`)
+          } else {
+            setLoadingStepText('24종 이모티콘 패키지가 완성되었습니다! 🎉')
+          }
+        }
       }
-    } catch (e) {
-      clearInterval(interval)
-      setIsGenerating(false)
-      alert('이모티콘 생성 중 오류가 발생했습니다.')
     }
+
+    // 지정한 동시성 개수만큼 워커 구동 (타임아웃 우회)
+    const workers = Array.from({ length: concurrency }, () => runWorker())
+    await Promise.all(workers)
+
+    if (notificationGranted) {
+      new Notification('이모지 마켓', {
+        body: '나만의 카카오 제안 규격 24종 이모티콘 패키지 빌드가 모두 완료되었습니다!',
+      })
+    }
+
+    setTimeout(() => {
+      setIsGenerating(false)
+    }, 1000)
   }
 
   const loadEmojiToCanvas = (uuid: string, isFresh = false) => {
@@ -405,29 +441,29 @@ export default function Home() {
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 {[
                   {
-                    id: 'trendy',
-                    tag: '식빵냥 스타일',
+                    id: 'Webtoon',
+                    tag: '웹툰 스타일',
                     title: '식빵냥 🐱',
                     desc: '애매모호하고 표정 변화 풍부. 위트와 뚱함의 조화',
-                    hash: '#식빵냥화풍 #상황묘사',
+                    hash: '#웹툰화풍 #상황묘사',
                     labelColor: 'text-violet-600 bg-violet-50 border-violet-100',
                     label: 'CAT'
                   },
                   {
-                    id: 'senior',
-                    tag: '라떼곰 스타일',
+                    id: 'Pixel',
+                    tag: '픽셀 스타일',
                     title: '라떼 곰 🐻',
                     desc: '직관적 의사전달. 격려와 칭찬의 따뜻한 텍스트 결합',
-                    hash: '#라떼곰 #따뜻한메시지',
+                    hash: '#픽셀화풍 #레트로게임',
                     labelColor: 'text-cyan-600 bg-cyan-50 border-cyan-100',
                     label: 'BEAR'
                   },
                   {
-                    id: 'office',
-                    tag: '토끼 스타일',
+                    id: '3D Clay',
+                    tag: '3D 클레이 스타일',
                     title: '일하는 토끼 🐰',
                     desc: '현실 밀착형 오피스 공감. 눈밑 그늘진 토끼',
-                    hash: '#현실리액션 #넵병兔',
+                    hash: '#3D점토 #클레이스타일',
                     labelColor: 'text-pink-600 bg-pink-50 border-pink-100',
                     label: 'RABBIT'
                   }
