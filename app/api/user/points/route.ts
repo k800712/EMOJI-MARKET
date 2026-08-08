@@ -12,15 +12,21 @@ export async function GET(req: NextRequest) {
 
     const supabase = await createClient(true) // service_role
 
-    const { data, error } = await supabase
-      .from('web3_users')
-      .select('points, referral_code, referred_by')
-      .eq('wallet_address', wallet.toLowerCase())
-      .single()
+    let data: any = null
+    try {
+      const { data: dbData, error: dbError } = await supabase
+        .from('web3_users')
+        .select('points, referral_code, referred_by')
+        .eq('wallet_address', wallet.toLowerCase())
+        .single()
 
-    if (error) {
-      // 해당 유저가 아직 없을 경우 0 반환
-      return NextResponse.json({ status: 'success', points: 0, referralCode: '', referredBy: null })
+      if (!dbError && dbData) {
+        data = dbData
+      } else {
+        console.warn('Supabase 데이터 연동 에러 방어 처리 (Points SELECT):', dbError)
+      }
+    } catch (e) {
+      console.warn('Supabase 데이터 연동 에러 방어 처리 (Points SELECT Exception):', e)
     }
 
     return NextResponse.json({

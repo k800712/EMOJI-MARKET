@@ -10,6 +10,12 @@ export async function createClient(bypassRLS = false) {
       ? process.env.SUPABASE_SERVICE_ROLE_KEY! 
       : process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
     {
+      global: {
+        headers: {
+          'Cache-Control': 'no-store',
+          'Pragma': 'no-cache'
+        }
+      },
       cookies: {
         getAll() {
           return cookieStore.getAll()

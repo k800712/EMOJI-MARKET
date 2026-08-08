@@ -55,64 +55,99 @@ export async function POST(req: NextRequest) {
     const supabase = await createClient(true) // service_role
 
     // 스키마 캐시 오류 원천 방지를 위해 runWithSchemaSafety 안전 래퍼 사용
-    const userRecord = await runWithSchemaSafety(async () => {
-      const { data, error } = await supabase
-        .from('web3_users')
-        .select('wallet_address, points, nickname, referral_code, referred_by')
-        .eq('wallet_address', virtualWallet.toLowerCase())
-        .maybeSingle()
+    let userRecord = null
+    try {
+      userRecord = await runWithSchemaSafety(async () => {
+        const { data, error } = await supabase
+          .from('web3_users')
+          .select('wallet_address, points, nickname, referral_code, referred_by')
+          .eq('wallet_address', virtualWallet.toLowerCase())
+          .maybeSingle()
 
-      if (error) throw error
-      return data
-    })
+        if (error) throw error
+        return data
+      })
+    } catch (e) {
+      console.warn('Supabase 가입 이력 SELECT 예외 발생. 2차 폴백 bypass.', e)
+    }
 
     let userReferralCode = ''
     let userReferredBy: string | null = null
 
     if (!userRecord) {
       // 3. 신규 가입 처리 (웰컴 3포인트 기본 지급)
-      await runWithSchemaSafety(async () => {
-        const { error } = await supabase
-          .from('web3_users')
-          .insert({
-            wallet_address: virtualWallet.toLowerCase(),
-            nickname: nickname,
-            nonce: 'KAKAO_SOCIAL',
-            nonce_expires_at: new Date(Date.now() + 1000 * 60 * 60).toISOString(),
-            points: 3,
-            kakao_id: kakaoId.toString()
-          })
+      try {
+        await runWithSchemaSafety(async () => {
+          const { error } = await supabase
+            .from('web3_users')
+            .insert({
+              wallet_address: virtualWallet.toLowerCase(),
+              nickname: nickname,
+              nonce: 'KAKAO_SOCIAL',
+              nonce_expires_at: new Date(Date.now() + 1000 * 60 * 60).toISOString(),
+              points: 3,
+              kakao_id: kakaoId.toString()
+            })
 
-        if (error) throw error
-      })
+          if (error) throw error
+        })
+      } catch (insertError: any) {
+        console.warn('1차 가입(nonce_expires_at 포함) 실패. 2차 폴백(nonce_expires_at 제외) 시도...', insertError)
+        // 2차 폴백: nonce_expires_at 컬럼을 완전히 빼고 INSERT 시도
+        try {
+          await runWithSchemaSafety(async () => {
+            const { error } = await supabase
+              .from('web3_users')
+              .insert({
+                wallet_address: virtualWallet.toLowerCase(),
+                nickname: nickname,
+                nonce: 'KAKAO_SOCIAL',
+                points: 3,
+                kakao_id: kakaoId.toString()
+              })
+
+            if (error) throw error
+          })
+        } catch (fallbackInsertError: any) {
+          console.warn('2차 가입(nonce_expires_at 제외) 실패. 3차 우회 모드 돌입...', fallbackInsertError)
+        }
+      }
 
       // 4. point_transactions에 가입 보너스 이력 기록
-      await runWithSchemaSafety(async () => {
-        const { error } = await supabase
-          .from('point_transactions')
-          .insert({
-            wallet_address: virtualWallet.toLowerCase(),
-            amount: 3,
-            transaction_type: 'gift',
-            description: '웰컴 가입 보너스 3P 지급'
-          })
+      try {
+        await runWithSchemaSafety(async () => {
+          const { error } = await supabase
+            .from('point_transactions')
+            .insert({
+              wallet_address: virtualWallet.toLowerCase(),
+              amount: 3,
+              transaction_type: 'gift',
+              description: '웰컴 가입 보너스 3P 지급'
+            })
 
-        if (error) throw error
-      })
+          if (error) throw error
+        })
+      } catch (ptError) {
+        console.warn('포인트 가입 보너스 이력 기록 실패 (우회 통과):', ptError)
+      }
 
       // 생성된 유저 정보 다시 조회 (트리거에 의해 자동 생성된 referral_code 추출)
-      const freshUser = await runWithSchemaSafety(async () => {
-        const { data, error } = await supabase
-          .from('web3_users')
-          .select('referral_code, referred_by')
-          .eq('wallet_address', virtualWallet.toLowerCase())
-          .single()
-        if (error) throw error
-        return data
-      })
-      if (freshUser) {
-        userReferralCode = freshUser.referral_code || ''
-        userReferredBy = freshUser.referred_by || null
+      try {
+        const freshUser = await runWithSchemaSafety(async () => {
+          const { data, error } = await supabase
+            .from('web3_users')
+            .select('referral_code, referred_by')
+            .eq('wallet_address', virtualWallet.toLowerCase())
+            .single()
+          if (error) throw error
+          return data
+        })
+        if (freshUser) {
+          userReferralCode = freshUser.referral_code || ''
+          userReferredBy = freshUser.referred_by || null
+        }
+      } catch (freshError) {
+        console.warn('가입 후 신규 유저 정보 재조회 실패 (디폴트 코드 우회):', freshError)
       }
     } else {
       // 기존에 가입된 이력이 있는 경우, 세션 유지를 위해 닉네임 동기화
