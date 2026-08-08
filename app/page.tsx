@@ -27,6 +27,9 @@ import ReferralCard from '@/components/ReferralCard'
 import AuthDiagnostics from '@/components/AuthDiagnostics'
 import Link from 'next/link'
 import { useConfetti } from '@/hooks/useConfetti'
+import ProfileDropdown from '@/components/ProfileDropdown'
+import { useRealtimePoints } from '@/hooks/useRealtimePoints'
+import AnimatedPointsBadge from '@/components/AnimatedPointsBadge'
 import { ShoppingBag } from 'lucide-react'
 
 interface HistoryItem {
@@ -101,6 +104,9 @@ export default function Home() {
   // 마이펫 실사 스티커 제작 모드 상태 변수
   const [activeMode, setActiveMode] = useState<'illust' | 'pet'>('illust')
   const { triggerGrandCannon } = useConfetti()
+  const [showProfileDropdown, setShowProfileDropdown] = useState<boolean>(false)
+  const [pointsDelta, setPointsDelta] = useState<number>(0)
+  const profileRef = useRef<HTMLDivElement>(null)
   const [userReferralCode, setUserReferralCode] = useState<string>('')
   const [userReferredBy, setUserReferredBy] = useState<string | null>(null)
   const [petStickers, setPetStickers] = useState<{name: string, label: string, image: string}[]>([])
@@ -108,6 +114,23 @@ export default function Home() {
   const [isPetGenerating, setIsPetGenerating] = useState<boolean>(false)
   const [isNoBgLoading, setIsNoBgLoading] = useState<boolean>(false)
   const [noBgImageUrl, setNoBgImageUrl] = useState<string>('')
+
+  // Supabase Realtime 실시간 포인트 감지 리스너 연동
+  useRealtimePoints(walletAddress, (newPoints, delta) => {
+    setPoints(newPoints)
+    setPointsDelta(delta)
+  })
+
+  // 드롭다운 외부 영역 터치 클릭 시 자동으로 닫기 핸들러
+  useEffect(() => {
+    const handleOutsideClick = (e: MouseEvent) => {
+      if (profileRef.current && !profileRef.current.contains(e.target as Node)) {
+        setShowProfileDropdown(false)
+      }
+    }
+    document.addEventListener('mousedown', handleOutsideClick)
+    return () => document.removeEventListener('mousedown', handleOutsideClick)
+  }, [])
 
   useEffect(() => {
     const stored = localStorage.getItem('wallet_session')
@@ -715,7 +738,7 @@ export default function Home() {
   return (
     <div className="min-h-screen flex flex-col justify-between pb-24">
       {/* Header */}
-      <header className="border-b border-gray-200/55 bg-white/75 backdrop-blur-lg sticky top-0 z-40">
+      <header className="border-b border-gray-100/80 bg-white/70 backdrop-blur-md sticky top-0 z-50 transition-all duration-300">
         <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-brand-primary to-brand-secondary flex items-center justify-center shadow-md shadow-blue-500/20">
@@ -740,25 +763,43 @@ export default function Home() {
               <button
                 type="button"
                 onClick={() => setShowLoginModal(true)}
-                className="flex items-center gap-1.5 bg-[#FEE500] hover:bg-[#F0D200] text-[#191919] px-3.5 py-1.5 rounded-2xl text-xs font-black shadow-sm transition-all duration-300 animate-pulse active:scale-95"
+                className="flex items-center gap-1.5 bg-[#FEE500] hover:bg-[#F0D200] text-[#191919] px-3.5 py-1.5 rounded-2xl text-xs font-black shadow-sm transition-all duration-300 animate-pulse active:scale-95 cursor-pointer"
               >
                 <span>로그인 시 무료 3P 선물 🎁</span>
               </button>
             ) : (
-              <div className="flex items-center gap-1.5 bg-gradient-to-r from-emerald-50 to-teal-50 text-emerald-700 px-3.5 py-1.5 rounded-2xl text-xs font-extrabold border border-emerald-100/70 shadow-sm shadow-emerald-500/5">
-                <Coins className="w-3.5 h-3.5 text-emerald-500 animate-pulse" />
-                <span>내 포인트: {points} P</span>
+              <div className="relative" ref={profileRef}>
                 <button
                   type="button"
                   onClick={() => {
-                    setRechargeStep('plan')
-                    setShowRechargeModal(true)
+                    if (typeof window !== 'undefined' && navigator.vibrate) {
+                      navigator.vibrate(60)
+                    }
+                    setShowProfileDropdown(!showProfileDropdown)
                   }}
-                  className="ml-1 bg-emerald-500 hover:bg-emerald-600 text-white rounded-full p-0.5 transition-colors focus:outline-none focus:ring-2 focus:ring-emerald-400 active:scale-95"
-                  title="포인트 충전"
+                  className="flex items-center gap-2 bg-gradient-to-r from-slate-50 to-slate-100 hover:from-slate-100 hover:to-slate-200 text-slate-700 px-3.5 py-1.5 rounded-2xl text-xs font-extrabold border border-slate-200/60 shadow-sm transition-all active:scale-95 cursor-pointer"
                 >
-                  <Plus className="w-2.5 h-2.5 font-black" />
+                  <span className="w-5 h-5 rounded-full bg-indigo-50 border border-indigo-100 flex items-center justify-center text-xs">
+                    🍞
+                  </span>
+                  <span className="max-w-[70px] truncate">{nickname || '식빵냥'}</span>
+<AnimatedPointsBadge points={points} delta={pointsDelta} />
                 </button>
+
+                {showProfileDropdown && (
+                  <ProfileDropdown
+                    walletAddress={walletAddress}
+                    nickname={nickname || '식빵냥'}
+                    points={points}
+                    referralCode={userReferralCode}
+                    onLogout={disconnectWallet}
+                    onRechargeClick={() => {
+                      setShowProfileDropdown(false)
+                      setRechargeStep('plan')
+                      setShowRechargeModal(true)
+                    }}
+                  />
+                )}
               </div>
             )}
             <span className="hidden md:inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-blue-500/10 text-blue-600 border border-blue-500/20">

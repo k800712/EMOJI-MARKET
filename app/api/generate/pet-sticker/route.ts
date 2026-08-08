@@ -76,6 +76,15 @@ export async function POST(req: NextRequest) {
       }, { status: 400 })
     }
 
+    // 0. 블랙리스트 제재 어뷰저 차단 가드
+    const { isUserBlocked } = require('@/utils/auth-guard')
+    if (await isUserBlocked(walletAddress)) {
+      return NextResponse.json({
+        status: 'error',
+        message: '🚨 어뷰징 의심 단말로 자동 제재 조치되었습니다. 관리자에게 문의하세요.'
+      }, { status: 403 })
+    }
+
     const supabase = await createClient(true) // service_role
 
     // 1. 포인트 조회 및 선검증 (최소 1 P 필요)
@@ -269,6 +278,17 @@ export async function POST(req: NextRequest) {
 
   } catch (error: any) {
     console.error('Pet sticker generate API error:', error)
+    // 🔥 시스템 예외(Exception) 알림 웹훅 발송
+    const { sendAdminAlert } = require('@/utils/adminAlert')
+    sendAdminAlert({
+      title: '마이펫 스티커 생성 500 에러 발생',
+      level: 'danger',
+      message: `마이펫 스티커 8종 합성 API 수행 도중 서버 런타임 에러가 발생했습니다: ${error.message || '알 수 없는 오류'}`,
+      metadata: {
+        '에러 메시지': error.message,
+        '에러 스택': error.stack || error.toString()
+      }
+    })
     return NextResponse.json({
       status: 'error',
       message: error.message || '마이펫 스티커 생성 중 에러가 발생했습니다.'

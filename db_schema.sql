@@ -210,3 +210,15 @@ CREATE POLICY "Allow service_role control on history" ON public.emoji_trade_hist
     FOR ALL TO service_role USING (true) WITH CHECK (true);
 
 
+-- ==========================================
+-- 7. 어뷰징 제재 및 블랙리스트 상태 관리 필드 추가
+-- ==========================================
+
+-- web3_users 테이블에 상태 필드가 없으면 기본값 'active'로 추가
+ALTER TABLE public.web3_users ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'active' CHECK (status IN ('active', 'blocked'));
+
+-- 인덱스 추가로 어뷰저 실시간 쿼리 속도 최적화
+CREATE INDEX IF NOT EXISTS idx_users_status_created ON public.web3_users(status, created_at);
+
+
+

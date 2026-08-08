@@ -9,6 +9,15 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ status: 'error', message: '필수 파라미터가 누락되었습니다.' }, { status: 400 })
     }
 
+    // 0. 블랙리스트 제재 어뷰저 차단 가드
+    const { isUserBlocked } = require('@/utils/auth-guard')
+    if (await isUserBlocked(walletAddress)) {
+      return NextResponse.json({
+        status: 'error',
+        message: '🚨 어뷰징 의심 단말로 자동 제재 조치되었습니다. 관리자에게 문의하세요.'
+      }, { status: 403 })
+    }
+
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
     const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
     const supabase = createClient(supabaseUrl, supabaseServiceKey)
@@ -71,6 +80,19 @@ export async function POST(req: NextRequest) {
 
     const todayPoints = todayTx ? todayTx.reduce((sum, tx) => sum + tx.amount, 0) : 0
     if (todayPoints >= 10) {
+      // ⚠️ 부정 추천인(Referral) 의심 경보 웹훅 발송
+      const { sendAdminAlert } = require('@/utils/adminAlert')
+      sendAdminAlert({
+        title: '추천 코드 일일 한도 초과 시도',
+        level: 'warning',
+        message: '유저가 일일 추천 적립 한도(10 P)를 넘어서 추천 혜택을 강제로 획득하려 시도했습니다.',
+        metadata: {
+          '피초대자(신규)': walletAddress,
+          '초대자(기존)': referrerAddress,
+          '초대자 추천 코드': referralCode,
+          '초대자 오늘 획득 포인트': todayPoints
+        }
+      })
       return NextResponse.json({ status: 'error', message: '해당 추천인은 오늘의 초대 한도(5명)를 초과하여 더 이상 추천 혜택을 받을 수 없습니다.' }, { status: 400 })
     }
 

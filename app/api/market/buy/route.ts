@@ -9,6 +9,15 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ status: 'error', message: '필수 파라미터가 누락되었습니다.' }, { status: 400 })
     }
 
+    // 0. 블랙리스트 제재 어뷰저 차단 가드
+    const { isUserBlocked } = require('@/utils/auth-guard')
+    if (await isUserBlocked(buyerWallet)) {
+      return NextResponse.json({
+        status: 'error',
+        message: '🚨 어뷰징 의심 단말로 자동 제재 조치되었습니다. 관리자에게 문의하세요.'
+      }, { status: 403 })
+    }
+
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
     const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
     const supabase = createClient(supabaseUrl, supabaseServiceKey)

@@ -47,6 +47,15 @@ export async function POST(req: NextRequest) {
     const quantity = Number(formData.get('quantity') || '1')
     const taskIndex = Number(formData.get('task_index') || '0')
 
+    // 0. 블랙리스트 제재 어뷰저 차단 가드
+    const { isUserBlocked } = require('@/utils/auth-guard')
+    if (userWallet !== 'guest' && await isUserBlocked(userWallet)) {
+      return NextResponse.json({
+        status: 'error',
+        message: '🚨 어뷰징 의심 단말로 자동 제재 조치되었습니다. 관리자에게 문의하세요.'
+      }, { status: 403 })
+    }
+
     if (!file) {
       return NextResponse.json({ status: 'error', message: '파일이 업로드되지 않았습니다.' }, { status: 400 })
     }
