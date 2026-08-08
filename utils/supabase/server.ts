@@ -10,10 +10,14 @@ export async function createClient(bypassRLS = false) {
       ? process.env.SUPABASE_SERVICE_ROLE_KEY! 
       : process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
     {
+      db: {
+        schema: 'public'
+      },
       global: {
         headers: {
-          'Cache-Control': 'no-store',
-          'Pragma': 'no-cache'
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0'
         }
       },
       cookies: {
