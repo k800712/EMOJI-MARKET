@@ -368,7 +368,7 @@ export default function Home() {
 
             {/* Style Selector */}
             <div className="bg-white border border-gray-200/60 rounded-3xl p-6 shadow-xl shadow-gray-200/30">
-              <h2 class="text-md font-bold mb-4 flex items-center gap-2 text-gray-800">
+              <h2 className="text-md font-bold mb-4 flex items-center gap-2 text-gray-800">
                 <span className="w-1 h-4 bg-brand-primary rounded-full"></span>
                 3. 캐릭터 기본 화풍 선택
               </h2>
