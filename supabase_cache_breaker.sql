@@ -1,9 +1,5 @@
--- 1. 새 컬럼 및 테이블에 대해 API 호출 역할(anon, authenticated, service_role)에 명시적으로 권한 재부여
-GRANT ALL PRIVILEGES ON TABLE public.web3_users TO postgres, anon, authenticated, service_role;
-GRANT ALL PRIVILEGES ON TABLE public.point_transactions TO postgres, anon, authenticated, service_role;
-GRANT ALL PRIVILEGES ON TABLE public.emojis TO postgres, anon, authenticated, service_role;
-GRANT ALL PRIVILEGES ON TABLE public.emoji_market_listings TO postgres, anon, authenticated, service_role;
-
+-- 1. 현재 SCHEMA 내에 생성되어 존재하는 모든 테이블 및 시퀀스에 대해 API 호출 역할(anon, authenticated, service_role)에 명시적으로 권한 일괄 재부여
+-- 개별 테이블명을 명시하는 대신 ALL TABLES를 사용하여 아직 생성되지 않은 테이블로 인한 42P01(relation does not exist) 오류를 원천 예방합니다.
 GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO postgres, anon, authenticated, service_role;
 GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO postgres, anon, authenticated, service_role;
 
