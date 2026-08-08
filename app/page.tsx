@@ -22,6 +22,12 @@ import {
 } from 'lucide-react'
 import WalletConnect from '@/components/WalletConnect'
 import EmojiKeyboardSelector from '@/components/EmojiKeyboardSelector'
+import EmojiLibrary from '@/components/EmojiLibrary'
+import ReferralCard from '@/components/ReferralCard'
+import AuthDiagnostics from '@/components/AuthDiagnostics'
+import Link from 'next/link'
+import { useConfetti } from '@/hooks/useConfetti'
+import { ShoppingBag } from 'lucide-react'
 
 interface HistoryItem {
   uuid: string
@@ -91,6 +97,17 @@ export default function Home() {
   const [kakaoNickname, setKakaoNickname] = useState<string>('')
   const [kakaoIdInput, setKakaoIdInput] = useState<string>('')
   const [paymentMethod, setPaymentMethod] = useState<string>('toss') // 'toss' | 'kakao' | 'culture'
+
+  // 마이펫 실사 스티커 제작 모드 상태 변수
+  const [activeMode, setActiveMode] = useState<'illust' | 'pet'>('illust')
+  const { triggerGrandCannon } = useConfetti()
+  const [userReferralCode, setUserReferralCode] = useState<string>('')
+  const [userReferredBy, setUserReferredBy] = useState<string | null>(null)
+  const [petStickers, setPetStickers] = useState<{name: string, label: string, image: string}[]>([])
+  const [petStickerZip, setPetStickerZip] = useState<string>('')
+  const [isPetGenerating, setIsPetGenerating] = useState<boolean>(false)
+  const [isNoBgLoading, setIsNoBgLoading] = useState<boolean>(false)
+  const [noBgImageUrl, setNoBgImageUrl] = useState<string>('')
 
   useEffect(() => {
     const stored = localStorage.getItem('wallet_session')
@@ -167,6 +184,10 @@ export default function Home() {
     setWalletAddress(null)
     setPoints(0)
     setPointHistory([])
+    setHistory([]) // 보관함 목록 비우기
+    setSelectedUUIDs(new Set()) // 선택된 UUID 목록 비우기
+    setUserReferralCode('')
+    setUserReferredBy(null)
     localStorage.removeItem('wallet_session')
     
     try {
@@ -177,24 +198,36 @@ export default function Home() {
   }
 
   // 모의 카카오 간편 소셜 로그인 처리 함수
-  const handleKakaoLogin = async (id: string, name: string) => {
-    if (!id || !name) {
-      alert('닉네임과 카카오 ID를 입력해 주세요!')
-      return
-    }
-
+  const handleKakaoLogin = async (id?: string, name?: string) => {
     try {
       const res = await fetch('/api/auth/kakao', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ kakaoId: id, nickname: name })
+        body: JSON.stringify({ kakaoId: id || '', nickname: name || '' })
       })
       const data = await res.json()
       if (data.status === 'success') {
         setWalletAddress(data.address)
         localStorage.setItem('wallet_session', data.address)
+        setUserReferralCode(data.referralCode || '')
+        setUserReferredBy(data.referredBy || null)
         fetchPoints(data.address)
         setShowKakaoModal(false)
+        setShowLoginModal(false)
+        
+        // 보관함 목록 동기화
+        try {
+          const historyRes = await fetch('/api/get-history')
+          const historyData = await historyRes.json()
+          if (historyData.status === 'success' && Array.isArray(historyData.data)) {
+            setHistory(historyData.data)
+            const firstSet = historyData.data.slice(0, 24)
+            setSelectedUUIDs(new Set(firstSet.map((item: any) => item.uuid)))
+            setActiveSetIndex(0)
+          }
+        } catch (he) {
+          console.error('Failed to reload history after login', he)
+        }
         
         // 햅틱 피드백 기동
         if (typeof navigator !== 'undefined' && navigator.vibrate) {
@@ -229,6 +262,8 @@ export default function Home() {
       const data = await res.json()
       if (data.status === 'success') {
         setPoints(data.points)
+        setUserReferralCode(data.referralCode || '')
+        setUserReferredBy(data.referredBy || null)
         fetchPointHistory(addr) // 거래 내역 실시간 연쇄 갱신
       }
     } catch (e) {
@@ -306,10 +341,20 @@ export default function Home() {
   const [dragOver, setDragOver] = useState<boolean>(false)
 
   useEffect(() => {
-    loadHistory()
-  }, [])
+    if (walletAddress) {
+      loadHistory()
+    } else {
+      setHistory([])
+    }
+  }, [walletAddress])
 
   const loadHistory = async () => {
+    // 비로그인 상태일 때는 Supabase 조회를 원천 차단하여 불필요한 트래픽 낭비 예방
+    if (!walletAddress) {
+      setHistory([])
+      return
+    }
+
     try {
       const res = await fetch('/api/get-history')
       const data = await res.json()
@@ -348,19 +393,105 @@ export default function Home() {
     }
   }
 
+  // 마이펫 이미지 업로드 및 배경 제거(누끼) API 호출
+  const handlePetUpload = async (file: File) => {
+    setIsNoBgLoading(true)
+    try {
+      const reader = new FileReader()
+      reader.onload = async (e) => {
+        const base64Image = e.target?.result as string
+        const res = await fetch('/api/remove-bg', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ image: base64Image })
+        })
+        const data = await res.json()
+        if (data.status === 'success') {
+          setNoBgImageUrl(data.image)
+          setUploadedFile(file)
+        } else {
+          alert(`배경 제거 실패: ${data.message || '알 수 없는 오류'}`)
+        }
+        setIsNoBgLoading(false)
+      }
+      reader.readAsDataURL(file)
+    } catch (err: any) {
+      console.error(err)
+      alert('펫 이미지 업로드 중 에러가 발생했습니다.')
+      setIsNoBgLoading(false)
+    }
+  }
+
+  // 마이펫 실사 스티커 8종 세트 최종 제작 핸들러
+  const handleGeneratePetStickers = async () => {
+    if (!walletAddress) {
+      alert('🔒 로그인이 완료되면 마이펫 실사 스티커 제작이 가능합니다!')
+      setShowLoginModal(true)
+      return
+    }
+    if (!noBgImageUrl) {
+      alert('🐶 반려동물 사진을 먼저 업로드해 주세요.')
+      return
+    }
+    if (points < 1) {
+      alert('⚠️ 보유 포인트가 부족합니다. 스티커를 제작하려면 최소 1 P가 필요합니다.')
+      return
+    }
+
+    setIsPetGenerating(true)
+    try {
+      const response = await fetch('/api/generate/pet-sticker', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          image: noBgImageUrl,
+          walletAddress
+        })
+      })
+      const data = await response.json()
+      if (data.status === 'success') {
+        setPetStickers(data.stickers)
+        setPetStickerZip(data.zip)
+        setPoints(data.remainingPoints)
+        
+        // 10대 도파민 폭발 축하 그랜드 캐논 발사!
+        triggerGrandCannon()
+
+        if (typeof navigator !== 'undefined' && navigator.vibrate) {
+          navigator.vibrate([100, 50, 100])
+        }
+
+        // 보관함 실시간 새로고침
+        loadHistory()
+      } else {
+        alert(data.message || '마이펫 스티커 생성 중 실패했습니다.')
+      }
+    } catch (e: any) {
+      console.error(e)
+      alert('스티커 제작 중 네트워크 오류가 발생했습니다.')
+    } finally {
+      setIsPetGenerating(false)
+    }
+  }
+
   const handleFile = (file: File) => {
     if (!file.type.match('image.*')) {
       alert('이미지 파일만 업로드할 수 있습니다.')
       return
     }
-    setUploadedFile(file)
-    const reader = new FileReader()
-    reader.onload = (e) => {
-      setPreviewUrl(e.target?.result as string)
-      setIsSliderVisible(false)
-      setCanvasResult(null)
+    
+    if (activeMode === 'pet') {
+      handlePetUpload(file)
+    } else {
+      setUploadedFile(file)
+      const reader = new FileReader()
+      reader.onload = (e) => {
+        setPreviewUrl(e.target?.result as string)
+        setIsSliderVisible(false)
+        setCanvasResult(null)
+      }
+      reader.readAsDataURL(file)
     }
-    reader.readAsDataURL(file)
   }
 
   const resetUpload = () => {
@@ -368,6 +499,9 @@ export default function Home() {
     setPreviewUrl(null)
     setCanvasResult(null)
     setIsSliderVisible(false)
+    setNoBgImageUrl('')
+    setPetStickers([])
+    setPetStickerZip('')
     if (fileInputRef.current) {
       fileInputRef.current.value = ''
     }
@@ -467,6 +601,9 @@ export default function Home() {
     if (wallet !== 'guest') {
       fetchPoints(wallet)
     }
+
+    // 일러스트 생성 성공 도파민 그랜드 캐논 발사!
+    triggerGrandCannon()
 
     setTimeout(() => {
       setIsGenerating(false)
@@ -589,7 +726,16 @@ export default function Home() {
               <p className="text-[10px] text-blue-500 font-mono tracking-wider">NEXT.JS AI EMOTICON BUILDER</p>
             </div>
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
+            {/* 10대 실시간 벼룩시장 바로가기 */}
+            <Link
+              href="/market"
+              className="flex items-center gap-1.5 bg-white hover:bg-slate-50 text-indigo-600 border border-indigo-100 px-3.5 py-1.5 rounded-2xl text-xs font-black shadow-sm transition-all active:scale-95 cursor-pointer"
+            >
+              <ShoppingBag className="w-3.5 h-3.5 text-indigo-500 animate-bounce" />
+              <span>벼룩시장 🪙</span>
+            </Link>
+
             {!walletAddress ? (
               <button
                 type="button"
@@ -642,12 +788,48 @@ export default function Home() {
                 <span className="w-1 h-4 bg-brand-primary rounded-full"></span>
                 1. 캐릭터 베이스 이미지 업로드
               </h2>
+
+              {/* iOS 스타일 세그먼트 컨트롤 */}
+              <div className="bg-gray-100 p-1 rounded-2xl flex gap-1 w-full mb-6">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveMode('illust')
+                    resetUpload()
+                  }}
+                  className={`flex-1 text-center py-2.5 text-xs font-extrabold rounded-xl transition-all cursor-pointer ${
+                    activeMode === 'illust'
+                      ? 'bg-white shadow-sm text-brand-primary'
+                      : 'text-gray-400 hover:text-gray-700'
+                  }`}
+                >
+                  🎨 AI 일러스트 생성
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveMode('pet')
+                    resetUpload()
+                  }}
+                  className={`flex-1 text-center py-2.5 text-xs font-extrabold rounded-xl transition-all cursor-pointer ${
+                    activeMode === 'pet'
+                      ? 'bg-white shadow-sm text-brand-primary'
+                      : 'text-gray-400 hover:text-gray-700'
+                  }`}
+                >
+                  🐶 마이펫 실사 스티커 제작
+                </button>
+              </div>
               
               <div 
                 onDragOver={handleDragOver}
                 onDragLeave={handleDragLeave}
                 onDrop={handleDrop}
-                onClick={() => fileInputRef.current?.click()}
+                onClick={() => {
+                  if (!isNoBgLoading && !isPetGenerating) {
+                    fileInputRef.current?.click()
+                  }
+                }}
                 className={`border-2 border-dashed rounded-2xl p-8 flex flex-col items-center justify-center gap-4 cursor-pointer transition-all duration-300 relative group ${
                   dragOver ? 'border-brand-primary bg-blue-50/30 scale-[0.99]' : 'border-gray-300 hover:border-brand-primary/50 bg-gray-50/50 hover:bg-gray-50/20'
                 }`}
@@ -660,13 +842,20 @@ export default function Home() {
                   className="hidden" 
                 />
                 
-                {!previewUrl ? (
+                {isNoBgLoading ? (
+                  <div className="flex flex-col items-center gap-3 text-center">
+                    <div className="w-10 h-10 rounded-full border-2 border-brand-primary border-t-transparent animate-spin"></div>
+                    <p className="text-xs text-gray-400 mt-1">배경 투명화 가공 중...</p>
+                  </div>
+                ) : !previewUrl ? (
                   <div className="flex flex-col items-center gap-3 text-center">
                     <div className="w-12 h-12 rounded-full bg-white flex items-center justify-center border border-gray-200 shadow-sm group-hover:scale-110 transition-transform duration-300">
                       <CloudUpload className="text-gray-400 group-hover:text-brand-primary transition-colors w-6 h-6" />
                     </div>
                     <div>
-                      <p className="text-sm font-semibold text-gray-700">여기에 이미지를 드래그 앤 드롭하거나 클릭하세요</p>
+                      <p className="text-sm font-semibold text-gray-700">
+                        {activeMode === 'pet' ? '반려동물 정면 사진을 드래그 앤 드롭하세요' : '여기에 이미지를 드래그 앤 드롭하거나 클릭하세요'}
+                      </p>
                       <p className="text-xs text-gray-400 mt-1">JPEG, PNG, WEBP 지원 (1:1 비율 권장)</p>
                     </div>
                   </div>
@@ -676,17 +865,64 @@ export default function Home() {
                     <button 
                       type="button" 
                       onClick={resetUpload}
-                      className="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-red-500 hover:bg-red-600 text-white flex items-center justify-center text-xs shadow-md transition-colors"
+                      disabled={isPetGenerating}
+                      className="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-red-500 hover:bg-red-600 text-white flex items-center justify-center text-xs shadow-md transition-colors disabled:opacity-50"
                     >
                       <X className="w-4 h-4" />
                     </button>
                   </div>
                 )}
               </div>
+
+              {/* 8종 감정 시안 리스트 & 제작 버튼 */}
+              {activeMode === 'pet' && noBgImageUrl && !isPetGenerating && (
+                <div className="mt-6 border-t border-gray-100 pt-6 space-y-5 animate-fade-in">
+                  <div>
+                    <h3 className="text-xs font-extrabold text-gray-500 mb-2.5 flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                      아래 8종의 감정 스티커 세트가 함께 제작됩니다! (1 P 소모)
+                    </h3>
+                    <div className="grid grid-cols-4 gap-2">
+                      {[
+                        { label: '💖 감사', desc: '감사합니다' },
+                        { label: '🔥 화이팅', desc: '화이팅!' },
+                        { label: '💡 반짝', desc: '반짝!' },
+                        { label: '🦖 크앙', desc: '크앙!' },
+                        { label: '💢 쳇', desc: '쳇!' },
+                        { label: '🌟 우와', desc: '우와!' },
+                        { label: '😭 힝', desc: '힝ㅠㅠㅠㅠ' },
+                        { label: '👍 네', desc: '네!' }
+                      ].map((theme, i) => (
+                        <div key={i} className="bg-gray-50 border border-gray-100 rounded-xl p-2.5 text-center flex flex-col justify-center items-center gap-1 shadow-sm">
+                          <span className="text-[10px] font-black text-gray-700">{theme.label}</span>
+                          <span className="text-[9px] font-semibold text-gray-400 font-mono">"{theme.desc}"</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleGeneratePetStickers}
+                    className="w-full py-4 bg-brand-primary hover:bg-brand-primary-hover text-white font-black rounded-2xl text-xs transition-all active:scale-[0.98] shadow-md shadow-blue-500/10 flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    🐶 마이펫 실사 스티커 8종 세트 제작하기 (1 P)
+                  </button>
+                </div>
+              )}
+
+              {/* 제작 중 스피너 */}
+              {activeMode === 'pet' && isPetGenerating && (
+                <div className="mt-6 border-t border-gray-100 pt-6 flex flex-col items-center justify-center gap-3">
+                  <div className="w-10 h-10 rounded-full border-2 border-brand-primary border-t-transparent animate-spin"></div>
+                  <p className="text-xs font-semibold text-gray-500">실사 스티커 패키지 합성 가공 중...</p>
+                </div>
+              )}
+
             </div>
 
             {/* Target Market Selector */}
-            <div className="bg-white border border-gray-200/60 rounded-3xl p-6 shadow-xl shadow-gray-200/30">
+            <div className={`bg-white border border-gray-200/60 rounded-3xl p-6 shadow-xl shadow-gray-200/30 ${activeMode === 'illust' ? '' : 'hidden'}`}>
               <h2 className="text-md font-bold mb-4 flex items-center gap-2 text-gray-800">
                 <span className="w-1 h-4 bg-brand-primary rounded-full"></span>
                 Target Market (타겟 국가)
@@ -717,7 +953,7 @@ export default function Home() {
             </div>
 
             {/* Style Selector */}
-            <div className="bg-white border border-gray-200/60 rounded-3xl p-6 shadow-xl shadow-gray-200/30">
+            <div className={`bg-white border border-gray-200/60 rounded-3xl p-6 shadow-xl shadow-gray-200/30 ${activeMode === 'illust' ? '' : 'hidden'}`}>
               <h2 className="text-md font-bold mb-4 flex items-center gap-2 text-gray-800">
                 <span className="w-1 h-4 bg-brand-primary rounded-full"></span>
                 3. 캐릭터 기본 화풍 선택
@@ -778,7 +1014,7 @@ export default function Home() {
             </div>
 
             {/* Custom Input */}
-            <div className="bg-white border border-gray-200/60 rounded-3xl p-6 shadow-xl shadow-gray-200/30">
+            <div className={`bg-white border border-gray-200/60 rounded-3xl p-6 shadow-xl shadow-gray-200/30 ${activeMode === 'illust' ? '' : 'hidden'}`}>
               <h2 className="text-md font-bold mb-4 flex items-center gap-2 text-gray-800">
                 <span className="w-1 h-4 bg-brand-primary rounded-full"></span>
                 4. 커스텀 텍스트 및 프롬프트
@@ -796,7 +1032,7 @@ export default function Home() {
             </div>
 
             {/* Quantity Selector */}
-            <div className="bg-white border border-gray-200/60 rounded-3xl p-6 shadow-xl shadow-gray-200/30">
+            <div className={`bg-white border border-gray-200/60 rounded-3xl p-6 shadow-xl shadow-gray-200/30 ${activeMode === 'illust' ? '' : 'hidden'}`}>
               <h2 className="text-md font-bold mb-4 flex items-center gap-2 text-gray-800">
                 <span className="w-1 h-4 bg-brand-primary rounded-full"></span>
                 생성 수량 및 소모 포인트 설정
@@ -834,6 +1070,7 @@ export default function Home() {
                 }
                 triggerGenerate()
               }}
+              style={{ display: activeMode === 'illust' ? 'flex' : 'none' }}
               disabled={isGenerating || (walletAddress && !isFormValid)}
               className={`w-full py-4.5 font-bold rounded-2xl flex items-center justify-center gap-2 transition-all duration-300 text-md select-none ${
                 isGenerating || (walletAddress && !isFormValid)
@@ -965,123 +1202,45 @@ export default function Home() {
             {/* 안심 전송 키보드 셀렉터 보드 */}
             <EmojiKeyboardSelector 
               emojis={activeEmojis.map(item => ({
+                id: item.uuid,
                 uuid: item.uuid,
                 style_type: item.style_type,
-                view_url: `/api/view?uuid=${item.uuid}`
+                file_path: `/api/view?uuid=${item.uuid}`
               }))} 
+              isLoggedIn={!!walletAddress}
             />
           </section>
 
         </div>
 
         {/* History Library */}
-        <section className="border-t border-gray-200/80 pt-8 mt-4">
-          <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 mb-6">
-            <div>
-              <h2 className="text-md font-bold flex items-center gap-2 text-gray-800">
-                <span className="w-1 h-4 bg-brand-accent rounded-full animate-pulse"></span>
-                카카오 제안용 24종 고정 액자형 보관함
-              </h2>
-              <p className="text-xs text-gray-500 mt-1">카카오 제출 규격에 부합하는 6열 4행 보드판입니다. 드롭다운으로 세트를 선택하세요.</p>
-            </div>
-            
-            <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto">
-              {emojiSets.length > 0 && (
-                <div className="flex items-center gap-1.5">
-                  <span className="text-xs text-gray-500 font-semibold">세트 선택:</span>
-                  <select
-                    value={activeSetIndex}
-                    onChange={(e) => {
-                      const idx = Number(e.target.value)
-                      setActiveSetIndex(idx)
-                      const currentSetUUIDs = emojiSets[idx]?.emojis.map(item => item.uuid) || []
-                      setSelectedUUIDs(new Set(currentSetUUIDs))
-                    }}
-                    className="text-xs bg-white border border-gray-200 rounded-xl px-3 py-2 font-semibold text-gray-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-brand-primary"
-                  >
-                    {emojiSets.map((set, idx) => (
-                      <option key={set.id} value={idx}>
-                        {set.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-              
-              <button 
-                onClick={toggleSelectAll}
-                className="text-xs text-brand-primary hover:text-blue-600 font-semibold px-3 py-2 bg-blue-50 hover:bg-blue-100 rounded-xl transition-all"
-              >
-                현재 세트 전체 선택/해제
-              </button>
-            </div>
-          </div>
+        <EmojiLibrary 
+          isLoggedIn={!!walletAddress}
+          myEmojis={activeEmojis}
+          emojiSets={emojiSets}
+          activeSetIndex={activeSetIndex}
+          setActiveSetIndex={setActiveSetIndex}
+          selectedUUIDs={selectedUUIDs}
+          toggleSelectAll={toggleSelectAll}
+          handleCardClick={handleCardClick}
+          deleteEmoji={deleteEmoji}
+          onLoginClick={() => setShowLoginModal(true)}
+        />
 
-          <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-4 p-4 bg-gray-50/50 border border-gray-100 rounded-3xl animate-fade-in">
-            {activeEmojis.length === 0 ? (
-              <p className="text-xs text-gray-400 col-span-full text-center py-8">선택된 세트에 이모티콘이 없거나 생성된 이력이 존재하지 않습니다.</p>
-            ) : (
-              activeEmojis.map((item) => {
-                const isSelected = selectedUUIDs.has(item.uuid)
-                let badgeLabel = '트렌디'
-                let badgeColor = 'text-violet-600 bg-violet-50 border-violet-100'
-                if (item.style_type === 'senior') {
-                  badgeLabel = '장년층'
-                  badgeColor = 'text-cyan-600 bg-cyan-50 border-cyan-100'
-                } else if (item.style_type === 'office') {
-                  badgeLabel = '직장인'
-                  badgeColor = 'text-pink-600 bg-pink-50 border-pink-100'
-                }
-
-                return (
-                  <div
-                    key={item.uuid}
-                    onClick={() => handleCardClick(item.uuid)}
-                    className={`bg-white border rounded-2xl p-3 flex flex-col items-center gap-2 cursor-pointer transition-all duration-300 relative group ${
-                      isSelected 
-                        ? 'ring-4 ring-blue-500 border-blue-500 bg-blue-50/20 shadow-md shadow-blue-500/5' 
-                        : 'border-gray-200 bg-white hover:shadow-md'
-                    }`}
-                  >
-                    <div className="absolute top-2 left-2 z-20">
-                      <input 
-                        type="checkbox" 
-                        checked={isSelected}
-                        onChange={() => {}} // 부모의 onClick에서 처리
-                        className="w-5 h-5 rounded-full border border-gray-300 bg-white text-brand-primary cursor-pointer accent-blue-500" 
-                      />
-                    </div>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        deleteEmoji(item.uuid)
-                      }}
-                      className="absolute top-2 right-2 z-20 p-1.5 rounded-lg bg-white/90 hover:bg-rose-50 border border-gray-200/60 hover:border-rose-200 text-gray-400 hover:text-rose-500 transition-all shadow-sm"
-                      title="이모티콘 삭제"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                    <div className="w-full aspect-square bg-gray-50 rounded-xl overflow-hidden relative flex items-center justify-center border border-gray-100">
-                      <img 
-                        src={`/api/view?uuid=${item.uuid}`} 
-                        alt="Sticker"
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                        loading="lazy"
-                      />
-                    </div>
-                    <span className={`text-[9px] font-bold px-2 py-0.5 rounded border uppercase tracking-wider ${badgeColor}`}>
-                      {badgeLabel}
-                    </span>
-                    <span className="text-[10px] text-gray-400 font-mono">
-                      {item.created_at.substring(0, 10)}
-                    </span>
-                  </div>
-                )
-              })
-            )}
+        {/* 추천인 보상 포인트 시스템 공유 카드 */}
+        {walletAddress && (
+          <div className="mt-8">
+            <ReferralCard 
+              walletAddress={walletAddress}
+              referralCode={userReferralCode}
+              referredBy={userReferredBy}
+              onReferralSuccess={(newPoints) => {
+                setPoints(newPoints)
+                fetchPoints(walletAddress)
+              }}
+            />
           </div>
-        </section>
+        )}
 
       </main>
 
@@ -1441,7 +1600,7 @@ export default function Home() {
       {/* Kakao Social Mock Login Modal */}
       {showKakaoModal && (
         <div className="fixed inset-0 bg-[#191919]/60 backdrop-blur-md flex items-center justify-center z-50 p-4 transition-all duration-300">
-          <div className="bg-white rounded-3xl p-6 max-w-sm w-full shadow-2xl relative border border-yellow-200/50 transform scale-100 transition-all duration-500 animate-slide-up">
+          <div className="bg-white rounded-3xl p-8 max-w-sm w-full shadow-2xl relative border border-yellow-200/50 transform scale-100 transition-all duration-500 animate-slide-up">
             
             {/* 닫기 버튼 */}
             <button
@@ -1458,63 +1617,27 @@ export default function Home() {
 
             <div className="space-y-6 text-center">
               <div className="flex flex-col items-center gap-3">
-                <div className="w-14 h-14 rounded-2xl bg-[#FEE500] flex items-center justify-center shadow-md">
-                  <span className="text-2xl">💬</span>
+                <div className="w-16 h-16 rounded-2xl bg-[#FEE500] flex items-center justify-center shadow-lg animate-pulse">
+                  <span className="text-3xl">💬</span>
                 </div>
                 <div>
                   <h3 className="text-lg font-black text-gray-900">카카오 3초 간편 가입</h3>
-                  <p className="text-xs text-gray-400 mt-1">지갑 설치 번거로움 없이 카카오 아이디로 즉시 시작하세요.</p>
+                  <p className="text-xs text-gray-400 mt-1">지갑 연동 없이 버튼 클릭 한 번에 즉시 가입됩니다.</p>
                 </div>
               </div>
 
-              {/* 입력 폼 */}
-              <div className="space-y-3 text-left">
-                <div>
-                  <label className="text-[10px] font-extrabold text-gray-400 block mb-1">사용할 닉네임</label>
-                  <input
-                    type="text"
-                    value={kakaoNickname}
-                    onChange={(e) => setKakaoNickname(e.target.value)}
-                    placeholder="예: 민지, 준우 등"
-                    className="w-full bg-gray-50 border border-gray-200 rounded-xl py-2.5 px-3 text-xs focus:outline-none focus:border-[#FEE500] transition-colors"
-                  />
-                </div>
-                <div>
-                  <div className="flex justify-between items-center mb-1">
-                    <label className="text-[10px] font-extrabold text-gray-400 block">카카오 고유 ID (숫자)</label>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const randomId = Math.floor(100000000 + Math.random() * 900000000).toString()
-                        setKakaoIdInput(randomId)
-                        if (!kakaoNickname) {
-                          const names = ['학생냥', '춘식이', '라이언', '어피치', '중고딩냥', '급식곰']
-                          const randName = names[Math.floor(Math.random() * names.length)]
-                          setKakaoNickname(randName)
-                        }
-                      }}
-                      className="text-[9px] text-[#cca700] hover:text-yellow-600 font-extrabold"
-                    >
-                      🎲 랜덤 생성하기
-                    </button>
-                  </div>
-                  <input
-                    type="text"
-                    value={kakaoIdInput}
-                    onChange={(e) => setKakaoIdInput(e.target.value)}
-                    placeholder="9자리 이상의 카카오 회원 고유 번호"
-                    className="w-full bg-gray-50 border border-gray-200 rounded-xl py-2.5 px-3 text-xs focus:outline-none focus:border-[#FEE500] transition-colors"
-                  />
-                </div>
-              </div>
-
+              {/* 1-Click 간편 로그인 단독 버튼 */}
               <button
                 type="button"
-                onClick={() => handleKakaoLogin(kakaoIdInput, kakaoNickname)}
-                className="w-full py-3.5 bg-[#FEE500] hover:bg-[#F0D200] text-[#191919] font-black rounded-2xl text-xs transition-all active:scale-[0.98] shadow-md shadow-yellow-500/10"
+                onClick={() => handleKakaoLogin()}
+                className="w-full py-4.5 bg-[#FEE500] hover:bg-[#F0D200] text-[#191919] font-black rounded-2xl text-xs transition-all active:scale-[0.98] shadow-lg shadow-yellow-500/20 flex items-center justify-center gap-2 cursor-pointer"
               >
-                💬 카카오 계정으로 간편 시작 (무료 3P 즉시 지급)
+                💛 카카오 계정으로 3초 만에 시작하기 (무료 3P 즉시 지급)
               </button>
+              
+              <p className="text-[10px] text-gray-400">
+                가입 보너스 3P는 지갑 주소 매핑 직후 지연 없이 즉시 적립됩니다.
+              </p>
             </div>
 
           </div>

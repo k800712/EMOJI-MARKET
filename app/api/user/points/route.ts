@@ -14,18 +14,20 @@ export async function GET(req: NextRequest) {
 
     const { data, error } = await supabase
       .from('web3_users')
-      .select('points')
+      .select('points, referral_code, referred_by')
       .eq('wallet_address', wallet.toLowerCase())
       .single()
 
     if (error) {
       // 해당 유저가 아직 없을 경우 0 반환
-      return NextResponse.json({ status: 'success', points: 0 })
+      return NextResponse.json({ status: 'success', points: 0, referralCode: '', referredBy: null })
     }
 
     return NextResponse.json({
       status: 'success',
-      points: data?.points ?? 0
+      points: data?.points ?? 0,
+      referralCode: data?.referral_code ?? '',
+      referredBy: data?.referred_by ?? null
     })
 
   } catch (error: any) {

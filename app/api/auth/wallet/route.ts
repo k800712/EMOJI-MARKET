@@ -81,7 +81,19 @@ export async function POST(req: NextRequest) {
       path: '/'
     })
 
-    return NextResponse.json({ status: 'success', address: address.toLowerCase() })
+    // user 정보 가져오기 (referral_code, referred_by 조회)
+    const { data: user } = await supabase
+      .from('web3_users')
+      .select('referral_code, referred_by')
+      .eq('wallet_address', address.toLowerCase())
+      .single()
+
+    return NextResponse.json({ 
+      status: 'success', 
+      address: address.toLowerCase(),
+      referralCode: user?.referral_code || '',
+      referredBy: user?.referred_by || null
+    })
 
   } catch (error: any) {
     console.error('Wallet Login error:', error)
