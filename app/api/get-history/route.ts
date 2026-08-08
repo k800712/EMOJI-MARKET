@@ -9,7 +9,7 @@ export async function GET() {
       .from('emojis')
       .select('uuid, style_type, created_at')
       .order('created_at', { ascending: false })
-      .limit(12)
+      .limit(100)
 
     if (error) {
       throw error

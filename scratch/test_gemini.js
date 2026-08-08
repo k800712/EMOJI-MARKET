@@ -44,12 +44,15 @@ async function testGemini() {
 }
 
 async function testImagen() {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:generateImages?key=${apiKey}`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent?key=${apiKey}`;
   const payload = {
-    prompt: "A cute little yellow duck sticker, cartoon style, solid white background",
-    numberOfImages: 1,
-    outputMimeType: "image/png",
-    aspectRatio: "1:1"
+    contents: [
+      {
+        parts: [
+          { text: "Generate an image of: A cute little yellow duck sticker, cartoon style, solid white background. Return only the image output." }
+        ]
+      }
+    ]
   };
 
   try {
@@ -65,10 +68,12 @@ async function testImagen() {
     const data = await res.json();
     console.log('Imagen Test Response Body (truncated):', JSON.stringify({ 
       ...data, 
-      generatedImages: data.generatedImages ? `Found ${data.generatedImages.length} images` : 'none' 
+      candidates: data.candidates ? `Found ${data.candidates.length} candidates` : 'none' 
     }, null, 2));
-    if (data.generatedImages && data.generatedImages[0]) {
-      console.log('Image Bytes Length:', data.generatedImages[0].image.imageBytes.length);
+    if (data.candidates && data.candidates[0]) {
+      console.log('Candidate keys:', Object.keys(data.candidates[0]));
+      const content = data.candidates[0].content;
+      console.log('Content parts:', content.parts ? content.parts.map(p => Object.keys(p)) : 'none');
     }
   } catch (err) {
     console.error('Imagen Test Fetch Error:', err);

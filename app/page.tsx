@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef, useMemo } from 'react'
 import { 
   Smile, 
   Wand2, 
@@ -28,27 +28,27 @@ const KAKAO_SITUATIONS = [
   { id: 1, text: "안녕!", prompt: "waving hand politely, smiling warmly, greeting" },
   { id: 2, text: "사랑해💖", prompt: "making a big heart shape with hands, eyes showing affection" },
   { id: 3, text: "흐앙😭", prompt: "weeping out a river of cartoon tears, looking deeply sad" },
-  { id: 4, text: "부글부글💢", prompt: "steaming in anger, red frustrated face, clenched fists" },
+  { id: 4, text: "부글부글💢", prompt: "comically angry face with small steam graphics, looking pouty and grumpy, humorous cartoon style" },
   { id: 5, text: "굿모닝☀️", prompt: "waking up sleepily with a stretch, morning sunshine vibe" },
   { id: 6, text: "졸려💤", prompt: "drooling while sleeping bubble pops out of nose" },
-  { id: 7, text: "대박!😱", prompt: "screaming in absolute shock, hands on cheeks like The Scream" },
+  { id: 7, text: "대박!😱", prompt: "shocked expression with widely opened eyes and mouth, comically surprised, cute cartoon sticker" },
   { id: 8, text: "축하해🎉", prompt: "throwing colorful party poppers and confetti, dancing" },
   { id: 9, text: "고마워🙏", prompt: "pressing hands together in polite gratitude, eyes glittering" },
   { id: 10, text: "배고파🤤", prompt: "stomach rumbling, thinking about a dream bubble of juicy meat" },
-  { id: 11, text: "퇴근원츄🔥", prompt: "typing furiously on a burning keyboard at work, crying" },
-  { id: 12, text: "멘붕🤯", prompt: "mind blown, head exploding with cute sparkles, dizzy eyes" },
+  { id: 11, text: "퇴근원츄🔥", prompt: "typing quickly on a keyboard with cartoon sweat drops, working hard with cute determination" },
+  { id: 12, text: "멘붕🤯", prompt: "completely dizzy with spiral eyes, cute cartoon stars floating above the head" },
   { id: 13, text: "지켜보고있다👁️", prompt: "squinting eyes suspiciously like a detective behind magnifier" },
   { id: 14, text: "최고!👍", prompt: "giving a big confident double thumbs up with a huge grin" },
-  { id: 15, text: "노놉🙅", prompt: "crossing arms in an X shape, showing a firm refusal expression" },
-  { id: 16, text: "어색..😅", prompt: "sweating nervously, scratching back of the head with a dry smile" },
-  { id: 17, text: "돈벼락💸", prompt: "showering in falling dollar banknotes, looking rich and happy" },
-  { id: 18, text: "불금이다!🍻", prompt: "clinking draft beer mugs with a comically flushed happy face" },
+  { id: 15, text: "노놉🙅", prompt: "gesturing a playful 'no' with hands crossed, looking comically stubborn but very cute, cartoon sticker" },
+  { id: 16, text: "어색..😅", prompt: "nervous sweat drop, scratching back of head with a comically shy smile" },
+  { id: 17, text: "돈벼락💸", prompt: "surrounded by comically floating yellow star sparkles and shiny cartoon diamonds, feeling extremely lucky, jackpot background" },
+  { id: 18, text: "불금이다!🍻", prompt: "holding a cute sparkling soda glass with comically flushed happy cheeks, celebrating joyfully" },
   { id: 19, text: "힘내요💪", prompt: "flexing tiny cute biceps, looking passionate and determined" },
   { id: 20, text: "뒹굴뒹굴🛌", prompt: "lying down flat wrapped in a soft blanket, feeling extremely lazy" },
-  { id: 21, text: "감기조심😷", prompt: "wearing a white medical mask, feverish red cheeks, holding thermometer" },
-  { id: 22, text: "도망쳐🏃", prompt: "running away in panic, leaving a dust cloud behind, terrified" },
+  { id: 21, text: "감기조심😷", prompt: "wrapped in a huge soft scarf, sneezing comically with a cartoon 'choo!' balloon, looking cute and fluffy" },
+  { id: 22, text: "도망쳐🏃", prompt: "running fast with comic speed lines, looking comically scared, funny cartoon style" },
   { id: 23, text: "오예!🕺", prompt: "dancing hysterically, throwing hands in the air, feeling ecstatic" },
-  { id: 24, text: "절받으세요🙇", prompt: "bowing deeply on the floor in traditional greeting pose" }
+  { id: 24, text: "절받으세요🙇", prompt: "cute bowing pose in traditional style, looking respectful and warm" }
 ]
 
 export default function Home() {
@@ -68,6 +68,36 @@ export default function Home() {
   const [canvasResult, setCanvasResult] = useState<string | null>(null)
   const [sliderPos, setSliderPos] = useState<number>(50)
   const [isSliderVisible, setIsSliderVisible] = useState<boolean>(false)
+  const [activeSetIndex, setActiveSetIndex] = useState<number>(0)
+
+  // 24종씩 논리 묶음(청크) 처리
+  const emojiSets = useMemo(() => {
+    const sets: Array<{ id: number; label: string; emojis: HistoryItem[] }> = []
+    for (let i = 0; i < history.length; i += 24) {
+      const chunk = history.slice(i, i + 24)
+      if (chunk.length > 0) {
+        const rep = chunk[0]
+        const date = new Date(rep.created_at)
+        const dateStr = `${String(date.getMonth() + 1).padStart(2, '0')}월 ${String(date.getDate()).padStart(2, '0')}일 ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
+        
+        let styleLabel = '트렌디'
+        if (rep.style_type === 'senior') styleLabel = '장년층'
+        else if (rep.style_type === 'office') styleLabel = '직장인'
+        
+        const setId = Math.floor(i / 24) + 1
+        sets.push({
+          id: setId,
+          label: `${setId}세트 (${dateStr} - ${styleLabel} 스타일, ${chunk.length}종)`,
+          emojis: chunk
+        })
+      }
+    }
+    return sets
+  }, [history])
+
+  const activeEmojis = useMemo(() => {
+    return emojiSets[activeSetIndex]?.emojis || []
+  }, [emojiSets, activeSetIndex])
 
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [dragOver, setDragOver] = useState<boolean>(false)
@@ -82,6 +112,10 @@ export default function Home() {
       const data = await res.json()
       if (data.status === 'success' && Array.isArray(data.data)) {
         setHistory(data.data)
+        // 로드 성공 시 첫 번째 세트(최신 24종)를 기본 활성 및 기본 체크 선택
+        const firstSet = data.data.slice(0, 24)
+        setSelectedUUIDs(new Set(firstSet.map((item: any) => item.uuid)))
+        setActiveSetIndex(0)
       }
     } catch (e) {
       console.error('Failed to load history', e)
@@ -164,13 +198,16 @@ export default function Home() {
     const tasks = [...KAKAO_SITUATIONS]
     let completedCount = 0
     const totalTasks = tasks.length
-    const concurrency = 3
+    const concurrency = 2
     const queue = [...tasks]
 
     const runWorker = async () => {
       while (queue.length > 0) {
         const task = queue.shift()
         if (!task) break
+
+        // API 429 한도 초과 방지를 위한 800ms Throttling 딜레이
+        await new Promise(r => setTimeout(r, 800))
 
         try {
           const formData = new FormData()
@@ -247,11 +284,16 @@ export default function Home() {
   }
 
   const toggleSelectAll = () => {
-    if (selectedUUIDs.size === history.length) {
-      setSelectedUUIDs(new Set())
+    const activeUUIDs = activeEmojis.map(item => item.uuid)
+    const allSelected = activeUUIDs.every(uuid => selectedUUIDs.has(uuid))
+    
+    const newSelected = new Set(selectedUUIDs)
+    if (allSelected) {
+      activeUUIDs.forEach(uuid => newSelected.delete(uuid))
     } else {
-      setSelectedUUIDs(new Set(history.map(item => item.uuid)))
+      activeUUIDs.forEach(uuid => newSelected.add(uuid))
     }
+    setSelectedUUIDs(newSelected)
   }
 
   const downloadZipPackage = async () => {
@@ -617,7 +659,7 @@ export default function Home() {
 
             {/* 안심 전송 키보드 셀렉터 보드 */}
             <EmojiKeyboardSelector 
-              emojis={history.map(item => ({
+              emojis={activeEmojis.map(item => ({
                 uuid: item.uuid,
                 style_type: item.style_type,
                 view_url: `/api/view?uuid=${item.uuid}`
@@ -629,27 +671,52 @@ export default function Home() {
 
         {/* History Library */}
         <section className="border-t border-gray-200/80 pt-8 mt-4">
-          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+          <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 mb-6">
             <div>
               <h2 className="text-md font-bold flex items-center gap-2 text-gray-800">
                 <span className="w-1 h-4 bg-brand-accent rounded-full animate-pulse"></span>
-                나의 이모티콘 보관함 (Supabase 실시간 클라우드 동기화)
+                카카오 제안용 24종 고정 액자형 보관함
               </h2>
-              <p className="text-xs text-gray-500 mt-1">원하는 이모티콘을 다중 선택하여 ZIP 패키지로 한번에 다운로드할 수 있습니다.</p>
+              <p className="text-xs text-gray-500 mt-1">카카오 제출 규격에 부합하는 6열 4행 보드판입니다. 드롭다운으로 세트를 선택하세요.</p>
             </div>
-            <button 
-              onClick={toggleSelectAll}
-              className="text-xs text-brand-primary hover:text-blue-600 font-semibold flex items-center gap-1"
-            >
-              전체 선택/해제
-            </button>
+            
+            <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto">
+              {emojiSets.length > 0 && (
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs text-gray-500 font-semibold">세트 선택:</span>
+                  <select
+                    value={activeSetIndex}
+                    onChange={(e) => {
+                      const idx = Number(e.target.value)
+                      setActiveSetIndex(idx)
+                      const currentSetUUIDs = emojiSets[idx]?.emojis.map(item => item.uuid) || []
+                      setSelectedUUIDs(new Set(currentSetUUIDs))
+                    }}
+                    className="text-xs bg-white border border-gray-200 rounded-xl px-3 py-2 font-semibold text-gray-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-brand-primary"
+                  >
+                    {emojiSets.map((set, idx) => (
+                      <option key={set.id} value={idx}>
+                        {set.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              
+              <button 
+                onClick={toggleSelectAll}
+                className="text-xs text-brand-primary hover:text-blue-600 font-semibold px-3 py-2 bg-blue-50 hover:bg-blue-100 rounded-xl transition-all"
+              >
+                현재 세트 전체 선택/해제
+              </button>
+            </div>
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-4">
-            {history.length === 0 ? (
-              <p className="text-xs text-gray-400 col-span-full text-center py-8">아직 생성된 이모티콘 이력이 없습니다.</p>
+          <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-4 p-4 bg-gray-50/50 border border-gray-100 rounded-3xl animate-fade-in">
+            {activeEmojis.length === 0 ? (
+              <p className="text-xs text-gray-400 col-span-full text-center py-8">선택된 세트에 이모티콘이 없거나 생성된 이력이 존재하지 않습니다.</p>
             ) : (
-              history.map((item) => {
+              activeEmojis.map((item) => {
                 const isSelected = selectedUUIDs.has(item.uuid)
                 let badgeLabel = '트렌디'
                 let badgeColor = 'text-violet-600 bg-violet-50 border-violet-100'

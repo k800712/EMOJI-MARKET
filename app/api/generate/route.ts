@@ -8,6 +8,32 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
+// 지수 백오프 기반 HTTP 호출 재시도 헬퍼 (429/503 방어)
+async function fetchWithRetry(url: string, options: RequestInit, retries = 3, initialDelay = 1500): Promise<Response> {
+  let delay = initialDelay
+  for (let i = 0; i < retries; i++) {
+    try {
+      const res = await fetch(url, options)
+      if (res.ok) {
+        return res
+      }
+      if (res.status === 429 || res.status === 503 || res.status === 500) {
+        console.warn(`[Gemini API 429/503/500] Status ${res.status}. Retrying in ${delay}ms... (${i + 1}/${retries})`)
+        await new Promise(resolve => setTimeout(resolve, delay))
+        delay *= 1.5
+        continue
+      }
+      return res
+    } catch (e) {
+      if (i === retries - 1) throw e
+      console.warn(`[Gemini API Network Error] ${e}. Retrying in ${delay}ms... (${i + 1}/${retries})`)
+      await new Promise(resolve => setTimeout(resolve, delay))
+      delay *= 1.5
+    }
+  }
+  return fetch(url, options)
+}
+
 export async function POST(req: NextRequest) {
   try {
     const formData = await req.formData()
@@ -44,7 +70,7 @@ export async function POST(req: NextRequest) {
       }]
     }
 
-    const geminiRes = await fetch(
+    const geminiRes = await fetchWithRetry(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
       {
         method: 'POST',
@@ -91,33 +117,53 @@ export async function POST(req: NextRequest) {
     const finalPrompt = `A premium mobile emoticon sticker of ${analyzedDescription}, ${actionPrompt}. ${stylePrompt}, ${emotionPrompt}, white thick sticker outline around the character, isolated on a pure #FFFFFF solid white background, high contrast, studio lighting.`
 
     // ----------------------------------------------------
-    // STEP 3: Google Imagen 3 API를 사용한 고화질 이모티콘 생성
+    // STEP 3: Google Gemini Image Generator API를 사용한 고화질 이모티콘 생성 (Safety/Rate-limit 방어)
     // ----------------------------------------------------
     const imagenPayload = {
-      prompt: finalPrompt,
-      numberOfImages: 1,
-      outputMimeType: "image/png",
-      aspectRatio: "1:1"
+      contents: [
+        {
+          parts: [
+            { text: `Generate an image of: ${finalPrompt}. Return only the image output.` }
+          ]
+        }
+      ]
     }
 
-    const imagenRes = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:generateImages?key=${process.env.GEMINI_API_KEY}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(imagenPayload)
+    let generatedBase64 = ""
+    let imageRetryDelay = 1500
+
+    for (let i = 0; i < 3; i++) {
+      try {
+        const imagenRes = await fetchWithRetry(
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent?key=${process.env.GEMINI_API_KEY}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(imagenPayload)
+          }
+        )
+
+        if (imagenRes.ok) {
+          const imagenData = await imagenRes.json()
+          generatedBase64 = imagenData.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data || ""
+          if (generatedBase64) {
+            break // 이미지 획득 성공 시 루프 탈출
+          }
+        }
+        
+        console.warn(`[Image Generation Warning] Empty base64 or Safety filter triggered. Retrying in ${imageRetryDelay}ms... (${i + 1}/3)`)
+        await new Promise(resolve => setTimeout(resolve, imageRetryDelay))
+        imageRetryDelay *= 1.5
+      } catch (e) {
+        if (i === 2) throw e
+        console.warn(`[Image Generation Error] ${e}. Retrying in ${imageRetryDelay}ms...`)
+        await new Promise(resolve => setTimeout(resolve, imageRetryDelay))
+        imageRetryDelay *= 1.5
       }
-    )
-
-    if (!imagenRes.ok) {
-      throw new Error(`Imagen 3 API failed with status ${imagenRes.status}`)
     }
-
-    const imagenData = await imagenRes.json()
-    const generatedBase64 = imagenData.generatedImages?.[0]?.image?.imageBytes
 
     if (!generatedBase64) {
-      throw new Error("Imagen 3 이미지 생성에 실패했거나 할당량이 초과되었습니다.")
+      throw new Error("이미지 생성에 실패했거나 세이프티 필터(Safety)에 의해 권한이 제한되었습니다.")
     }
 
     const generatedBuffer = Buffer.from(generatedBase64, 'base64')
