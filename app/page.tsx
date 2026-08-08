@@ -685,7 +685,7 @@ export default function Home() {
                         e.stopPropagation()
                         deleteEmoji(item.uuid)
                       }}
-                      className="absolute top-2 right-2 z-20 p-1.5 rounded-lg bg-white/90 hover:bg-rose-50 border border-gray-200 hover:border-rose-200 text-gray-400 hover:text-rose-500 transition-all opacity-0 group-hover:opacity-100 shadow-sm"
+                      className="absolute top-2 right-2 z-20 p-1.5 rounded-lg bg-white/90 hover:bg-rose-50 border border-gray-200/60 hover:border-rose-200 text-gray-400 hover:text-rose-500 transition-all shadow-sm"
                       title="이모티콘 삭제"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
