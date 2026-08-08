@@ -380,6 +380,7 @@ export default function Home() {
 
     try {
       const res = await fetch('/api/get-history')
+      if (!res.ok) throw new Error(`HTTP error ${res.status}`)
       const data = await res.json()
       if (data.status === 'success' && Array.isArray(data.data)) {
         setHistory(data.data)
@@ -387,9 +388,12 @@ export default function Home() {
         const firstSet = data.data.slice(0, 24)
         setSelectedUUIDs(new Set(firstSet.map((item: any) => item.uuid)))
         setActiveSetIndex(0)
+      } else {
+        setHistory([])
       }
     } catch (e) {
-      console.error('Failed to load history', e)
+      console.error("Supabase 데이터 연동 에러 방어 처리 (loadHistory):", e)
+      setHistory([]) // DB 에러가 발생하더라도 페이지가 다운되지 않고 빈 보관함 UI로 렌더링되도록 방어합니다.
     }
   }
 
