@@ -30,6 +30,8 @@ import { useConfetti } from '@/hooks/useConfetti'
 import ProfileDropdown from '@/components/ProfileDropdown'
 import { useRealtimePoints } from '@/hooks/useRealtimePoints'
 import AnimatedPointsBadge from '@/components/AnimatedPointsBadge'
+import Footer from '@/components/Footer'
+import TermsModal from '@/components/TermsModal'
 import { ShoppingBag } from 'lucide-react'
 
 interface HistoryItem {
@@ -114,6 +116,10 @@ export default function Home() {
   const [isPetGenerating, setIsPetGenerating] = useState<boolean>(false)
   const [isNoBgLoading, setIsNoBgLoading] = useState<boolean>(false)
   const [noBgImageUrl, setNoBgImageUrl] = useState<string>('')
+  const [tosChecked, setTosChecked] = useState<boolean>(false)
+  const [privacyChecked, setPrivacyChecked] = useState<boolean>(false)
+  const [termsModalOpen, setTermsModalOpen] = useState<boolean>(false)
+  const [termsModalType, setTermsModalType] = useState<'tos' | 'privacy'>('tos')
 
   // Supabase Realtime 실시간 포인트 감지 리스너 연동
   useRealtimePoints(walletAddress, (newPoints, delta) => {
@@ -235,6 +241,8 @@ export default function Home() {
         setUserReferralCode(data.referralCode || '')
         setUserReferredBy(data.referredBy || null)
         setKakaoNickname(data.nickname || name || '식빵냥')
+        setTosChecked(false)
+        setPrivacyChecked(false)
         fetchPoints(data.address)
         setShowKakaoModal(false)
         setShowLoginModal(false)
@@ -1656,6 +1664,8 @@ export default function Home() {
                 setShowKakaoModal(false)
                 setKakaoNickname('')
                 setKakaoIdInput('')
+                setTosChecked(false)
+                setPrivacyChecked(false)
               }}
               className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition-colors p-1"
             >
@@ -1697,15 +1707,67 @@ export default function Home() {
                 </div>
               </div>
 
+              {/* 필수 약관 동의 체크박스 */}
+              <div className="space-y-2.5 bg-gray-50 p-4 rounded-2xl border border-gray-100 text-left">
+                <div className="flex items-center justify-between text-[11px]">
+                  <label className="flex items-center gap-2 cursor-pointer text-gray-600 font-bold select-none">
+                    <input
+                      type="checkbox"
+                      checked={tosChecked}
+                      onChange={(e) => setTosChecked(e.target.checked)}
+                      className="w-3.5 h-3.5 rounded border-gray-300 text-yellow-500 focus:ring-yellow-500 cursor-pointer"
+                    />
+                    <span>(필수) 서비스 이용약관 동의</span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTermsModalType('tos')
+                      setTermsModalOpen(true)
+                    }}
+                    className="text-gray-400 hover:text-indigo-600 font-extrabold underline cursor-pointer"
+                  >
+                    보기
+                  </button>
+                </div>
+
+                <div className="flex items-center justify-between text-[11px]">
+                  <label className="flex items-center gap-2 cursor-pointer text-gray-600 font-bold select-none">
+                    <input
+                      type="checkbox"
+                      checked={privacyChecked}
+                      onChange={(e) => setPrivacyChecked(e.target.checked)}
+                      className="w-3.5 h-3.5 rounded border-gray-300 text-yellow-500 focus:ring-yellow-500 cursor-pointer"
+                    />
+                    <span>(필수) 개인정보 수집 및 이용 동의</span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTermsModalType('privacy')
+                      setTermsModalOpen(true)
+                    }}
+                    className="text-gray-400 hover:text-indigo-600 font-extrabold underline cursor-pointer"
+                  >
+                    보기
+                  </button>
+                </div>
+              </div>
+
               {/* 간편 로그인 시작 버튼 */}
               <button
                 type="button"
+                disabled={!tosChecked || !privacyChecked}
                 onClick={() => {
                   const id = kakaoIdInput.trim() || kakaoNickname.trim() || 'guest_user'
                   const name = kakaoNickname.trim() || '식빵냥'
                   handleKakaoLogin(id, name)
                 }}
-                className="w-full py-4.5 bg-[#FEE500] hover:bg-[#F0D200] text-[#191919] font-black rounded-2xl text-xs transition-all active:scale-[0.98] shadow-lg shadow-yellow-500/20 flex items-center justify-center gap-2 cursor-pointer"
+                className={`w-full py-4.5 font-black rounded-2xl text-xs transition-all flex items-center justify-center gap-2 shadow-lg ${
+                  tosChecked && privacyChecked
+                    ? 'bg-[#FEE500] hover:bg-[#F0D200] text-[#191919] shadow-yellow-500/20 active:scale-[0.98] cursor-pointer'
+                    : 'bg-gray-100 text-gray-400 border border-gray-200 opacity-50 cursor-not-allowed pointer-events-none'
+                }`}
               >
                 💛 카카오 계정으로 3초 만에 시작하기 (무료 3P 즉시 지급)
               </button>
@@ -1720,17 +1782,14 @@ export default function Home() {
       )}
 
       {/* Footer */}
-      <footer className="border-t border-gray-200/80 py-6 bg-white text-center text-xs text-gray-400">
-        <div className="max-w-6xl mx-auto px-4 flex flex-col sm:flex-row justify-between items-center gap-3">
-          <p>&copy; 2026 이모지 마켓. All rights reserved.</p>
-          <div className="flex items-center gap-4">
-            <a href="#" className="hover:text-gray-600 transition-colors">이용약관</a>
-            <a href="#" className="hover:text-gray-600 transition-colors">개인정보처리방침</a>
-            <span className="text-gray-200">|</span>
-            <span className="font-mono text-[10px] text-brand-primary/80">BUILD FOR KAKAO EMOTICON SPEC</span>
-          </div>
-        </div>
-      </footer>
+      <Footer />
+
+      {/* 약관 상세 조회용 모달 */}
+      <TermsModal
+        isOpen={termsModalOpen}
+        onClose={() => setTermsModalOpen(false)}
+        type={termsModalType}
+      />
     </div>
   )
 }
