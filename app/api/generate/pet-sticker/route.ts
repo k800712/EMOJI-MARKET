@@ -87,7 +87,7 @@ export async function POST(req: NextRequest) {
 
     const supabase = await createClient(true) // service_role
 
-    // 1. 포인트 조회 및 선검증 (최소 1 P 필요)
+    // 1. 포인트 조회 및 선검증 (최소 8 P 필요)
     const userRecord = await runWithSchemaSafety(async () => {
       const { data, error } = await supabase
         .from('web3_users')
@@ -99,10 +99,10 @@ export async function POST(req: NextRequest) {
       return data
     })
 
-    if (!userRecord || (userRecord.points || 0) < 1) {
+    if (!userRecord || (userRecord.points || 0) < 8) {
       return NextResponse.json({
         status: 'error',
-        message: '보유 포인트가 부족합니다. 스티커를 제작하려면 최소 1 P가 필요합니다.'
+        message: '보유 포인트가 부족합니다. 스티커를 제작하려면 최소 8 P가 필요합니다.'
       }, { status: 403 })
     }
 
@@ -251,7 +251,7 @@ export async function POST(req: NextRequest) {
       // 포인트 차감
       const { error: updateError } = await supabase
         .from('web3_users')
-        .update({ points: userRecord.points - 1 })
+        .update({ points: userRecord.points - 8 })
         .eq('wallet_address', walletAddress.toLowerCase())
 
       if (updateError) throw updateError
@@ -261,7 +261,7 @@ export async function POST(req: NextRequest) {
         .from('point_transactions')
         .insert({
           wallet_address: walletAddress.toLowerCase(),
-          amount: -1,
+          amount: -8,
           transaction_type: 'use',
           description: '마이펫 실사 스티커 8종 패키지 제작'
         })
@@ -273,7 +273,7 @@ export async function POST(req: NextRequest) {
       status: 'success',
       stickers: imageResults,
       zip: zipBase64,
-      remainingPoints: userRecord.points - 1
+      remainingPoints: userRecord.points - 8
     })
 
   } catch (error: any) {

@@ -470,8 +470,8 @@ export default function Home() {
       alert('🐶 반려동물 사진을 먼저 업로드해 주세요.')
       return
     }
-    if (points < 1) {
-      alert('⚠️ 보유 포인트가 부족합니다. 스티커를 제작하려면 최소 1 P가 필요합니다.')
+    if (points < 8) {
+      alert('⚠️ 보유 포인트가 부족합니다. 스티커를 제작하려면 최소 8 P가 필요합니다.')
       return
     }
 
@@ -963,7 +963,7 @@ export default function Home() {
                         setShowLoginModal(true)
                         return
                       }
-                      if (points < 1) {
+                      if (points < 8) {
                         setRechargeStep('plan')
                         setShowRechargeModal(true)
                         return
@@ -976,7 +976,7 @@ export default function Home() {
                         ? 'bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200/50'
                         : !walletAddress
                           ? 'bg-[#FEE500] hover:bg-[#F0D200] text-[#191919] font-black active:scale-[0.98] shadow-lg shadow-yellow-500/10 cursor-pointer'
-                          : points < 1
+                          : points < 8
                             ? 'bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white cursor-pointer active:scale-[0.98] shadow-lg shadow-orange-500/20'
                             : 'bg-gradient-to-r from-brand-primary to-brand-secondary hover:from-blue-600 hover:to-indigo-600 text-white cursor-pointer active:scale-[0.98] shadow-lg shadow-blue-500/25'
                     }`}
@@ -993,15 +993,15 @@ export default function Home() {
                             <span className="text-sm">🔑</span>
                             3초 만에 로그인하고 마이펫 제작 시작하기
                           </>
-                        ) : points < 1 ? (
+                        ) : points < 8 ? (
                           <>
                             <Zap className="w-4 h-4 animate-bounce" />
-                            ⚠️ 포인트가 부족합니다 (1 P 필요 / 충전하기)
+                            ⚠️ 포인트가 부족합니다 (8 P 필요 / 충전하기)
                           </>
                         ) : (
                           <>
                             <Sparkles className="w-4 h-4" />
-                            ✨ 마이펫 실사 스티커 8종 패키지 제작하기 (1 P 소모)
+                            ✨ 마이펫 실사 스티커 8종 패키지 제작하기 (8 P 소모)
                           </>
                         )}
                       </>
