@@ -145,8 +145,64 @@ export default function Home() {
     if (stored) {
       setWalletAddress(stored)
       fetchPoints(stored)
+      subscribeToWebPush(stored)
     }
   }, [])
+
+  // Web Push VAPID 키 변환용 헬퍼 함수
+  const urlBase64ToUint8Array = (base64String: string) => {
+    const padding = '='.repeat((4 - base64String.length % 4) % 4)
+    const base64 = (base64String + padding)
+      .replace(/\-/g, '+')
+      .replace(/_/g, '/')
+    const rawData = window.atob(base64)
+    const outputArray = new Uint8Array(rawData.length)
+    for (let i = 0; i < rawData.length; ++i) {
+      outputArray[i] = rawData.charCodeAt(i)
+    }
+    return outputArray
+  }
+
+  // 비용 무료 웹 푸시 알림 신청 및 구독 갱신 연동 함수
+  const subscribeToWebPush = async (addr: string) => {
+    if (typeof window === 'undefined' || !('serviceWorker' in navigator) || !('PushManager' in window)) {
+      console.warn('[Web Push] 이 브라우저는 웹 푸시 알림을 지원하지 않습니다.')
+      return
+    }
+
+    try {
+      const registration = await navigator.serviceWorker.register('/sw.js')
+      const permission = await Notification.requestPermission()
+      if (permission !== 'granted') {
+        console.warn('[Web Push] 알림 권한이 거부되었습니다.')
+        return
+      }
+
+      const vapidPublicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY
+      if (!vapidPublicKey) {
+        console.warn('[Web Push] NEXT_PUBLIC_VAPID_PUBLIC_KEY 환경 변수가 누락되었습니다.')
+        return
+      }
+
+      const applicationServerKey = urlBase64ToUint8Array(vapidPublicKey)
+      const subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: applicationServerKey
+      })
+
+      await fetch('/api/user/push-subscription', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          walletAddress: addr,
+          subscription: subscription.toJSON()
+        })
+      })
+      console.log('[Web Push] 웹 푸시 구독 정보 적재 성공!')
+    } catch (err) {
+      console.error('[Web Push] 구독 갱신 실패:', err)
+    }
+  }
 
   const connectWallet = async () => {
     if (isConnecting) return
@@ -252,6 +308,8 @@ export default function Home() {
         setTosChecked(false)
         setPrivacyChecked(false)
         fetchPoints(data.address)
+        subscribeToWebPush(data.address)
+        subscribeToWebPush(data.address)
         setShowKakaoModal(false)
         setShowLoginModal(false)
         
