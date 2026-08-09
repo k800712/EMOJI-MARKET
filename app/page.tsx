@@ -958,10 +958,54 @@ export default function Home() {
 
                   <button
                     type="button"
-                    onClick={handleGeneratePetStickers}
-                    className="w-full py-4 bg-brand-primary hover:bg-brand-primary-hover text-white font-black rounded-2xl text-xs transition-all active:scale-[0.98] shadow-md shadow-blue-500/10 flex items-center justify-center gap-2 cursor-pointer"
+                    onClick={() => {
+                      if (!walletAddress) {
+                        setShowLoginModal(true)
+                        return
+                      }
+                      if (points < 1) {
+                        setRechargeStep('plan')
+                        setShowRechargeModal(true)
+                        return
+                      }
+                      handleGeneratePetStickers()
+                    }}
+                    disabled={isPetGenerating || !noBgImageUrl}
+                    className={`w-full py-4.5 font-bold rounded-2xl flex items-center justify-center gap-2 transition-all duration-300 text-xs select-none ${
+                      isPetGenerating || !noBgImageUrl
+                        ? 'bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200/50'
+                        : !walletAddress
+                          ? 'bg-[#FEE500] hover:bg-[#F0D200] text-[#191919] font-black active:scale-[0.98] shadow-lg shadow-yellow-500/10 cursor-pointer'
+                          : points < 1
+                            ? 'bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white cursor-pointer active:scale-[0.98] shadow-lg shadow-orange-500/20'
+                            : 'bg-gradient-to-r from-brand-primary to-brand-secondary hover:from-blue-600 hover:to-indigo-600 text-white cursor-pointer active:scale-[0.98] shadow-lg shadow-blue-500/25'
+                    }`}
                   >
-                    🐶 마이펫 실사 스티커 8종 세트 제작하기 (1 P)
+                    {isPetGenerating ? (
+                      <>
+                        <div className="w-4 h-4 rounded-full border-2 border-white/30 border-t-white animate-spin"></div>
+                        <span>실사 스티커 패키지 합성 가공 중...</span>
+                      </>
+                    ) : (
+                      <>
+                        {!walletAddress ? (
+                          <>
+                            <span className="text-sm">🔑</span>
+                            3초 만에 로그인하고 마이펫 제작 시작하기
+                          </>
+                        ) : points < 1 ? (
+                          <>
+                            <Zap className="w-4 h-4 animate-bounce" />
+                            ⚠️ 포인트가 부족합니다 (1 P 필요 / 충전하기)
+                          </>
+                        ) : (
+                          <>
+                            <Sparkles className="w-4 h-4" />
+                            ✨ 마이펫 실사 스티커 8종 패키지 제작하기 (1 P 소모)
+                          </>
+                        )}
+                      </>
+                    )}
                   </button>
                 </div>
               )}
