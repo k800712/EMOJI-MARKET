@@ -21,3 +21,7 @@ ALTER TABLE public.web3_users DROP COLUMN IF EXISTS temporary_cache_breaker_trig
 
 -- 다시 한번 캐시 리로드 실행
 SELECT public.force_api_schema_reload();
+
+-- 4. 실제 이름을 저장할 real_name 컬럼 물리 추가 및 캐시 리로드
+ALTER TABLE public.web3_users ADD COLUMN IF NOT EXISTS real_name TEXT;
+SELECT public.force_api_schema_reload();

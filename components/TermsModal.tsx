@@ -77,7 +77,7 @@ export default function TermsModal({ isOpen, onClose, type }: TermsModalProps) {
               <div>
                 <h4 className="font-extrabold text-gray-800 mb-1">제 1 조 (수집하는 개인정보 항목 및 수집방법)</h4>
                 <p className="leading-relaxed">회사는 서비스 이용을 위해 최초 로그인 시점 또는 회원가입 시점에 다음과 같은 최소한의 개인정보를 수집합니다.<br />
-                - **수집 항목**: 카카오 고유 ID (카카오 로그인 시), 닉네임, 가상 지갑 주소, 포인트 거래 이력, 이모지 생성 이력<br />
+                - **수집 항목**: 이름(실명), 카카오 고유 ID (카카오 로그인 시), 닉네임, 가상 지갑 주소, 포인트 거래 이력, 이모지 생성 이력<br />
                 - **수집 방법**: 모바일 웹/앱을 통한 로그인 연동 및 API 호출 로그 생성</p>
               </div>
               <div>

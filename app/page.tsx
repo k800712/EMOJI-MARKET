@@ -101,6 +101,7 @@ export default function Home() {
   const [isConnecting, setIsConnecting] = useState<boolean>(false)
   const [kakaoNickname, setKakaoNickname] = useState<string>('')
   const [kakaoIdInput, setKakaoIdInput] = useState<string>('')
+  const [kakaoRealName, setKakaoRealName] = useState<string>('')
   const [paymentMethod, setPaymentMethod] = useState<string>('toss') // 'toss' | 'kakao' | 'culture'
 
   // 마이펫 실사 스티커 제작 모드 상태 변수
@@ -217,6 +218,11 @@ export default function Home() {
     setSelectedUUIDs(new Set()) // 선택된 UUID 목록 비우기
     setUserReferralCode('')
     setUserReferredBy(null)
+    setKakaoNickname('')
+    setKakaoIdInput('')
+    setKakaoRealName('')
+    setTosChecked(false)
+    setPrivacyChecked(false)
     localStorage.removeItem('wallet_session')
     
     try {
@@ -227,12 +233,12 @@ export default function Home() {
   }
 
   // 모의 카카오 간편 소셜 로그인 처리 함수
-  const handleKakaoLogin = async (id?: string, name?: string) => {
+  const handleKakaoLogin = async (id?: string, name?: string, realName?: string) => {
     try {
       const res = await fetch('/api/auth/kakao', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ kakaoId: id || '', nickname: name || '' })
+        body: JSON.stringify({ kakaoId: id || '', nickname: name || '', realName: realName || '' })
       })
       const data = await res.json()
       if (data.status === 'success') {
@@ -241,6 +247,7 @@ export default function Home() {
         setUserReferralCode(data.referralCode || '')
         setUserReferredBy(data.referredBy || null)
         setKakaoNickname(data.nickname || name || '식빵냥')
+        setKakaoRealName(data.realName || realName || '')
         setTosChecked(false)
         setPrivacyChecked(false)
         fetchPoints(data.address)
@@ -297,6 +304,7 @@ export default function Home() {
         setUserReferralCode(data.referralCode || '')
         setUserReferredBy(data.referredBy || null)
         setKakaoNickname(data.nickname || '')
+        setKakaoRealName(data.realName || '')
         fetchPointHistory(addr) // 거래 내역 실시간 연쇄 갱신
       }
     } catch (e) {
@@ -796,14 +804,14 @@ export default function Home() {
                   <span className="w-5 h-5 rounded-full bg-indigo-50 border border-indigo-100 flex items-center justify-center text-xs">
                     🍞
                   </span>
-                  <span className="max-w-[70px] truncate">{kakaoNickname || '식빵냥'}</span>
+                  <span className="max-w-[70px] truncate">{kakaoRealName || kakaoNickname || '식빵냥'}</span>
                   <AnimatedPointsBadge points={points} delta={pointsDelta} />
                 </button>
 
                 {showProfileDropdown && (
                   <ProfileDropdown
                     walletAddress={walletAddress}
-                    nickname={kakaoNickname || '식빵냥'}
+                    nickname={kakaoRealName || kakaoNickname || '식빵냥'}
                     points={points}
                     referralCode={userReferralCode}
                     onLogout={disconnectWallet}
@@ -1668,6 +1676,11 @@ export default function Home() {
                 type="button"
                 onClick={() => {
                   setShowLoginModal(false)
+                  setKakaoNickname('')
+                  setKakaoIdInput('')
+                  setKakaoRealName('')
+                  setTosChecked(false)
+                  setPrivacyChecked(false)
                   setShowKakaoModal(true)
                 }}
                 className="w-full py-3.5 bg-[#FEE500] hover:bg-[#F0D200] text-[#191919] font-black rounded-2xl text-xs transition-all active:scale-[0.98] shadow-sm shadow-yellow-500/10 flex items-center justify-center gap-2"
@@ -1708,6 +1721,7 @@ export default function Home() {
                 setShowKakaoModal(false)
                 setKakaoNickname('')
                 setKakaoIdInput('')
+                setKakaoRealName('')
                 setTosChecked(false)
                 setPrivacyChecked(false)
               }}
@@ -1730,12 +1744,49 @@ export default function Home() {
               {/* 카카오 계정 입력 폼 */}
               <div className="space-y-4 text-left">
                 <div>
-                  <label className="block text-[10px] font-black text-gray-400 mb-1.5 uppercase tracking-wider">카카오 계정 이름 (진짜 닉네임)</label>
+                  <div className="flex justify-between items-center mb-1.5">
+                    <label className="block text-[10px] font-black text-gray-400 uppercase tracking-wider">카카오 계정 이름 (진짜 닉네임)</label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const adjs = ['신난', '일하는', '춤추는', '잠자는', '뚱한', '우는', '화난', '배고픈', '멋쟁이', '피곤한']
+                        const nouns = ['식빵냥', '라떼곰', '시바견', '초코토끼', '대파구리', '햄스터', '아기오리', '뚱토끼']
+                        const randomAdj = adjs[Math.floor(Math.random() * adjs.length)]
+                        const randomNoun = nouns[Math.floor(Math.random() * nouns.length)]
+                        const hashNum = Math.floor(100 + Math.random() * 900)
+                        setKakaoNickname(`${randomAdj}${randomNoun}#${hashNum}`)
+                        
+                        // 실명 랜덤 생성 (흔한 한국 이름 풀 생성)
+                        const familyNames = ['김', '이', '박', '최', '정', '강', '조', '윤', '장', '임']
+                        const givenNames = ['민준', '서준', '도윤', '예준', '시우', '하준', '주원', '지호', '지후', '준우', '서연', '서윤', '지우', '서현', '하은', '하윤', '민서', '지유', '윤서', '채원']
+                        const randomFamily = familyNames[Math.floor(Math.random() * familyNames.length)]
+                        const randomGiven = givenNames[Math.floor(Math.random() * givenNames.length)]
+                        setKakaoRealName(`${randomFamily}${randomGiven}`)
+                        
+                        // ID도 고유한 난수로 세팅
+                        const randomId = Math.floor(100000000 + Math.random() * 900000000).toString()
+                        setKakaoIdInput(randomId)
+                      }}
+                      className="text-[10px] bg-yellow-100 hover:bg-yellow-200 text-yellow-800 font-extrabold px-2 py-0.5 rounded-md transition-all cursor-pointer active:scale-95"
+                    >
+                      🎲 랜덤 정보 생성
+                    </button>
+                  </div>
                   <input
                     type="text"
                     value={kakaoNickname}
                     onChange={(e) => setKakaoNickname(e.target.value)}
                     placeholder="카카오 프로필 닉네임을 입력하세요 (예: 식빵냥)"
+                    className="w-full px-4 py-3 rounded-2xl bg-gray-50 border border-gray-200 text-xs font-bold text-gray-800 focus:outline-none focus:ring-2 focus:ring-[#FEE500] focus:bg-white transition-all"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black text-gray-400 mb-1.5 uppercase tracking-wider">카카오 본인인증 실명 (진짜 이름)</label>
+                  <input
+                    type="text"
+                    value={kakaoRealName}
+                    onChange={(e) => setKakaoRealName(e.target.value)}
+                    placeholder="본인인증 실명을 입력하세요 (예: 홍길동)"
                     className="w-full px-4 py-3 rounded-2xl bg-gray-50 border border-gray-200 text-xs font-bold text-gray-800 focus:outline-none focus:ring-2 focus:ring-[#FEE500] focus:bg-white transition-all"
                   />
                 </div>
@@ -1805,7 +1856,8 @@ export default function Home() {
                 onClick={() => {
                   const id = kakaoIdInput.trim() || kakaoNickname.trim() || 'guest_user'
                   const name = kakaoNickname.trim() || '식빵냥'
-                  handleKakaoLogin(id, name)
+                  const rName = kakaoRealName.trim() || name
+                  handleKakaoLogin(id, name, rName)
                 }}
                 className={`w-full py-4.5 font-black rounded-2xl text-xs transition-all flex items-center justify-center gap-2 shadow-lg ${
                   tosChecked && privacyChecked

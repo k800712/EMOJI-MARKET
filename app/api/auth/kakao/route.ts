@@ -34,7 +34,7 @@ async function runWithSchemaSafety<T>(operation: () => Promise<T>): Promise<T> {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}))
-    let { kakaoId, nickname } = body
+    let { kakaoId, nickname, realName } = body
 
     // 1. 카카오 ID가 없을 경우 서버 자체적으로 고유 난수 ID 할당
     if (!kakaoId) {
@@ -51,6 +51,11 @@ export async function POST(req: NextRequest) {
       nickname = `${randomAdj}${randomNoun}#${hashNum}`
     }
 
+    // 3. 실명이 없을 경우 닉네임을 폴백으로 사용
+    if (!realName) {
+      realName = nickname
+    }
+
     const virtualWallet = generateVirtualWallet(kakaoId.toString())
     const supabase = await createClient(true) // service_role
 
@@ -60,7 +65,7 @@ export async function POST(req: NextRequest) {
       userRecord = await runWithSchemaSafety(async () => {
         const { data, error } = await supabase
           .from('web3_users')
-          .select('wallet_address, points, nickname, referral_code, referred_by')
+          .select('wallet_address, points, nickname, referral_code, referred_by, real_name')
           .eq('wallet_address', virtualWallet.toLowerCase())
           .maybeSingle()
 
@@ -83,6 +88,7 @@ export async function POST(req: NextRequest) {
             .insert({
               wallet_address: virtualWallet.toLowerCase(),
               nickname: nickname,
+              real_name: realName,
               nonce: 'KAKAO_SOCIAL',
               nonce_expires_at: new Date(Date.now() + 1000 * 60 * 60).toISOString(),
               points: 3,
@@ -101,6 +107,7 @@ export async function POST(req: NextRequest) {
               .insert({
                 wallet_address: virtualWallet.toLowerCase(),
                 nickname: nickname,
+                real_name: realName,
                 nonce: 'KAKAO_SOCIAL',
                 points: 3,
                 kakao_id: kakaoId.toString()
@@ -150,8 +157,9 @@ export async function POST(req: NextRequest) {
         console.warn('가입 후 신규 유저 정보 재조회 실패 (디폴트 코드 우회):', freshError)
       }
     } else {
-      // 기존에 가입된 이력이 있는 경우, 세션 유지를 위해 닉네임 동기화
+      // 기존에 가입된 이력이 있는 경우, 세션 유지를 위해 닉네임/실명 동기화
       nickname = userRecord.nickname || nickname
+      realName = userRecord.real_name || realName
       userReferralCode = userRecord.referral_code || ''
       userReferredBy = userRecord.referred_by || null
     }
@@ -170,6 +178,7 @@ export async function POST(req: NextRequest) {
       status: 'success',
       address: virtualWallet.toLowerCase(),
       nickname: nickname,
+      realName: realName,
       kakaoId: kakaoId, // 로컬 캐싱을 위해 카카오 ID 돌려줌
       referralCode: userReferralCode,
       referredBy: userReferredBy
