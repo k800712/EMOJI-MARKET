@@ -234,6 +234,7 @@ export default function Home() {
         localStorage.setItem('wallet_session', data.address)
         setUserReferralCode(data.referralCode || '')
         setUserReferredBy(data.referredBy || null)
+        setKakaoNickname(data.nickname || name || '식빵냥')
         fetchPoints(data.address)
         setShowKakaoModal(false)
         setShowLoginModal(false)
@@ -287,6 +288,7 @@ export default function Home() {
         setPoints(data.points)
         setUserReferralCode(data.referralCode || '')
         setUserReferredBy(data.referredBy || null)
+        setKakaoNickname(data.nickname || '')
         fetchPointHistory(addr) // 거래 내역 실시간 연쇄 갱신
       }
     } catch (e) {
@@ -786,14 +788,14 @@ export default function Home() {
                   <span className="w-5 h-5 rounded-full bg-indigo-50 border border-indigo-100 flex items-center justify-center text-xs">
                     🍞
                   </span>
-                  <span className="max-w-[70px] truncate">{nickname || '식빵냥'}</span>
-<AnimatedPointsBadge points={points} delta={pointsDelta} />
+                  <span className="max-w-[70px] truncate">{kakaoNickname || '식빵냥'}</span>
+                  <AnimatedPointsBadge points={points} delta={pointsDelta} />
                 </button>
 
                 {showProfileDropdown && (
                   <ProfileDropdown
                     walletAddress={walletAddress}
-                    nickname={nickname || '식빵냥'}
+                    nickname={kakaoNickname || '식빵냥'}
                     points={points}
                     referralCode={userReferralCode}
                     onLogout={disconnectWallet}
@@ -1671,10 +1673,38 @@ export default function Home() {
                 </div>
               </div>
 
-              {/* 1-Click 간편 로그인 단독 버튼 */}
+              {/* 카카오 계정 입력 폼 */}
+              <div className="space-y-4 text-left">
+                <div>
+                  <label className="block text-[10px] font-black text-gray-400 mb-1.5 uppercase tracking-wider">카카오 계정 이름 (진짜 닉네임)</label>
+                  <input
+                    type="text"
+                    value={kakaoNickname}
+                    onChange={(e) => setKakaoNickname(e.target.value)}
+                    placeholder="카카오 프로필 닉네임을 입력하세요 (예: 식빵냥)"
+                    className="w-full px-4 py-3 rounded-2xl bg-gray-50 border border-gray-200 text-xs font-bold text-gray-800 focus:outline-none focus:ring-2 focus:ring-[#FEE500] focus:bg-white transition-all"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black text-gray-400 mb-1.5 uppercase tracking-wider">카카오 고유 ID (계정 식별값)</label>
+                  <input
+                    type="text"
+                    value={kakaoIdInput}
+                    onChange={(e) => setKakaoIdInput(e.target.value)}
+                    placeholder="고유 ID를 입력하세요 (미입력 시 닉네임과 동기화)"
+                    className="w-full px-4 py-3 rounded-2xl bg-gray-50 border border-gray-200 text-xs font-bold text-gray-800 focus:outline-none focus:ring-2 focus:ring-[#FEE500] focus:bg-white transition-all"
+                  />
+                </div>
+              </div>
+
+              {/* 간편 로그인 시작 버튼 */}
               <button
                 type="button"
-                onClick={() => handleKakaoLogin()}
+                onClick={() => {
+                  const id = kakaoIdInput.trim() || kakaoNickname.trim() || 'guest_user'
+                  const name = kakaoNickname.trim() || '식빵냥'
+                  handleKakaoLogin(id, name)
+                }}
                 className="w-full py-4.5 bg-[#FEE500] hover:bg-[#F0D200] text-[#191919] font-black rounded-2xl text-xs transition-all active:scale-[0.98] shadow-lg shadow-yellow-500/20 flex items-center justify-center gap-2 cursor-pointer"
               >
                 💛 카카오 계정으로 3초 만에 시작하기 (무료 3P 즉시 지급)

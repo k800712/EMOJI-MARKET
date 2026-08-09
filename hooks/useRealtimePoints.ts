@@ -8,10 +8,12 @@ export function useRealtimePoints(
   onPointsChange: (newPoints: number, delta: number) => void
 ) {
   const latestPointsRef = useRef<number | null>(null)
-  const supabase = createClient()
 
   useEffect(() => {
     if (!walletAddress) return
+
+    const supabase = createClient()
+    if (!supabase) return // SSR pre-render 시점 예외 방어
 
     // 1. 초기 1회성 REST API 포인트 조회 & 기준점 수립
     const fetchInitialPoints = async () => {

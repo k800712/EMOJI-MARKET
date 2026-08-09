@@ -16,7 +16,7 @@ export async function GET(req: NextRequest) {
     try {
       const { data: dbData, error: dbError } = await supabase
         .from('web3_users')
-        .select('points, referral_code, referred_by')
+        .select('points, referral_code, referred_by, nickname')
         .eq('wallet_address', wallet.toLowerCase())
         .single()
 
@@ -33,7 +33,8 @@ export async function GET(req: NextRequest) {
       status: 'success',
       points: data?.points ?? 0,
       referralCode: data?.referral_code ?? '',
-      referredBy: data?.referred_by ?? null
+      referredBy: data?.referred_by ?? null,
+      nickname: data?.nickname ?? ''
     })
 
   } catch (error: any) {
