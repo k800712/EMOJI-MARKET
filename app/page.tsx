@@ -32,6 +32,7 @@ import { useRealtimePoints } from '@/hooks/useRealtimePoints'
 import AnimatedPointsBadge from '@/components/AnimatedPointsBadge'
 import Footer from '@/components/Footer'
 import TermsModal from '@/components/TermsModal'
+import SessionGuard from '@/components/SessionGuard'
 import { ShoppingBag } from 'lucide-react'
 
 interface HistoryItem {
@@ -1886,6 +1887,11 @@ export default function Home() {
         onClose={() => setTermsModalOpen(false)}
         type={termsModalType}
       />
+
+      {/* 탭 이탈/백그라운드 포커스 아웃 감지 실시간 로그아웃 가드 */}
+      {walletAddress && (
+        <SessionGuard onLogout={disconnectWallet} />
+      )}
     </div>
   )
 }
