@@ -25,3 +25,8 @@ SELECT public.force_api_schema_reload();
 -- 4. 실제 이름을 저장할 real_name 컬럼 물리 추가 및 캐시 리로드
 ALTER TABLE public.web3_users ADD COLUMN IF NOT EXISTS real_name TEXT;
 SELECT public.force_api_schema_reload();
+
+-- 5. 웹 푸시 고유 키 및 미확인 세트 개수 컬럼 안전 추가 및 캐시 리로드
+ALTER TABLE public.web3_users ADD COLUMN IF NOT EXISTS push_subscription JSONB;
+ALTER TABLE public.web3_users ADD COLUMN IF NOT EXISTS pending_emoji_notifications INTEGER DEFAULT 0;
+SELECT public.force_api_schema_reload();

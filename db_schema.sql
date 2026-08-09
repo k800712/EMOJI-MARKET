@@ -12,7 +12,9 @@ CREATE TABLE IF NOT EXISTS public.web3_users (
     created_at TIMESTAMPTZ DEFAULT now(),
     updated_at TIMESTAMPTZ DEFAULT now(),
     kakao_id TEXT UNIQUE,
-    real_name TEXT
+    real_name TEXT,
+    push_subscription JSONB,
+    pending_emoji_notifications INTEGER DEFAULT 0
 );
 
 -- 코멘트 추가
@@ -21,6 +23,8 @@ COMMENT ON COLUMN public.web3_users.nonce IS '리플레이 공격 방지용 5분
 COMMENT ON COLUMN public.web3_users.points IS '이모티콘 생성용 포인트 잔액 (웰컴 3P 지급)';
 COMMENT ON COLUMN public.web3_users.kakao_id IS '카카오 소셜 회원 로그인 고유 ID 매핑';
 COMMENT ON COLUMN public.web3_users.real_name IS '카카오 본인인증 검증 실제 실명';
+COMMENT ON COLUMN public.web3_users.push_subscription IS '웹 푸시 브라우저 고유 키 저장용';
+COMMENT ON COLUMN public.web3_users.pending_emoji_notifications IS '미확인 완성 세트 개수';
 
 -- 2. emojis 테이블 생성 (이모티콘 파일 메타데이터 및 NFT 소유권 관리)
 CREATE TABLE IF NOT EXISTS public.emojis (
