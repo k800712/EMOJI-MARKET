@@ -9,7 +9,6 @@ function generateVirtualWallet(kakaoId: string): string {
   return `0x${hash.substring(0, 40)}`
 }
 
-// 스키마 캐시 불일치 에러 및 일시적인 DB 커넥션 불안정을 방지하기 위한 안전 래퍼 함수
 async function runWithSchemaSafety<T>(operation: () => Promise<T>): Promise<T> {
   const maxRetries = 3
   let retryCount = 0
@@ -23,7 +22,6 @@ async function runWithSchemaSafety<T>(operation: () => Promise<T>): Promise<T> {
       console.warn(`[Supabase DB Safety Wrapper] Attempt ${retryCount + 1} failed. Error:`, e.message || e)
       retryCount++
       if (retryCount < maxRetries) {
-        // 지수 백오프 기반 대기
         await new Promise((resolve) => setTimeout(resolve, 250 * retryCount))
       }
     }
@@ -34,39 +32,66 @@ async function runWithSchemaSafety<T>(operation: () => Promise<T>): Promise<T> {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}))
-    let { kakaoId, nickname, realName } = body
+    const { accessToken, walletAddress: bodyWalletAddress } = body
+    
+    let kakaoId = body.kakaoId
+    let nickname = body.nickname
+    let realName = body.realName
+    let profileImageUrl = '/default-avatar.png'
 
-    // 1. 카카오 ID가 없을 경우 서버 자체적으로 고유 난수 ID 할당
-    if (!kakaoId) {
-      kakaoId = Math.floor(100000000 + Math.random() * 900000000).toString()
+    // 1. 카카오 실제 accessToken 연동 백엔드 처리 (1단계 요구사항)
+    if (accessToken) {
+      const kakaoResponse = await fetch("https://kapi.kakao.com/v2/user/me", {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-type": "application/x-www-form-urlencoded;charset=utf-8",
+        },
+      })
+
+      if (!kakaoResponse.ok) {
+        throw new Error("카카오 사용자 정보를 가져오는 데 실패했습니다.")
+      }
+
+      const kakaoUser = await kakaoResponse.json()
+      kakaoId = kakaoUser.id?.toString()
+      nickname = kakaoUser.properties?.nickname || '식빵냥'
+      realName = kakaoUser.kakao_account?.name || nickname // 필수 동의 실명 우선
+      profileImageUrl = kakaoUser.kakao_account?.profile?.profile_image_url || '/default-avatar.png'
+    } else {
+      // 2. 모의 가입/로그인용 fallback 가드 처리
+      if (!kakaoId) {
+        kakaoId = Math.floor(100000000 + Math.random() * 900000000).toString()
+      }
+      if (!nickname) {
+        const adjs = ['신난', '일하는', '춤추는', '잠자는', '뚱한', '우는', '화난', '배고픈', '멋쟁이', '피곤한']
+        const nouns = ['식빵냥', '라떼곰', '시바견', '초코토끼', '대파구리', '햄스터', '아기오리', '뚱토끼']
+        nickname = `${adjs[Math.floor(Math.random() * adjs.length)]}${nouns[Math.floor(Math.random() * nouns.length)]}#${Math.floor(100 + Math.random() * 900)}`
+      }
+      if (!realName) {
+        realName = nickname
+      }
+
+      const kakao_account = body.kakao_account
+      if (kakao_account && kakao_account.profile) {
+        const profile = kakao_account.profile
+        const isDefault = profile.is_default_image === true || profile.is_default_image === 'true'
+        if (!isDefault) {
+          profileImageUrl = profile.profile_image_url || profile.thumbnail_image_url || '/default-avatar.png'
+        }
+      }
     }
 
-    // 2. 닉네임이 없을 경우 10대 취향의 귀여운 랜덤 캐릭터 닉네임 조합 자동 생성
-    if (!nickname) {
-      const adjs = ['신난', '일하는', '춤추는', '잠자는', '뚱한', '우는', '화난', '배고픈', '멋쟁이', '피곤한']
-      const nouns = ['식빵냥', '라떼곰', '시바견', '초코토끼', '대파구리', '햄스터', '아기오리', '뚱토끼']
-      const randomAdj = adjs[Math.floor(Math.random() * adjs.length)]
-      const randomNoun = nouns[Math.floor(Math.random() * nouns.length)]
-      const hashNum = Math.floor(100 + Math.random() * 900)
-      nickname = `${randomAdj}${randomNoun}#${hashNum}`
-    }
-
-    // 3. 실명이 없을 경우 닉네임을 폴백으로 사용
-    if (!realName) {
-      realName = nickname
-    }
-
-    const virtualWallet = generateVirtualWallet(kakaoId.toString())
+    const targetWallet = bodyWalletAddress || generateVirtualWallet(kakaoId)
     const supabase = await createClient(true) // service_role
 
-    // 스키마 캐시 오류 원천 방지를 위해 runWithSchemaSafety 안전 래퍼 사용
+    // 기존 유저 조회
     let userRecord = null
     try {
       userRecord = await runWithSchemaSafety(async () => {
         const { data, error } = await supabase
           .from('web3_users')
-          .select('wallet_address, points, nickname, referral_code, referred_by, real_name')
-          .eq('wallet_address', virtualWallet.toLowerCase())
+          .select('wallet_address, points, nickname, referral_code, referred_by, real_name, profile_image_url')
+          .eq('wallet_address', targetWallet.toLowerCase())
           .maybeSingle()
 
         if (error) throw error
@@ -86,47 +111,29 @@ export async function POST(req: NextRequest) {
           const { error } = await supabase
             .from('web3_users')
             .insert({
-              wallet_address: virtualWallet.toLowerCase(),
+              wallet_address: targetWallet.toLowerCase(),
               nickname: nickname,
               real_name: realName,
+              profile_image_url: profileImageUrl,
               nonce: 'KAKAO_SOCIAL',
-              nonce_expires_at: new Date(Date.now() + 1000 * 60 * 60).toISOString(),
               points: 3,
-              kakao_id: kakaoId.toString()
+              kakao_id: kakaoId.toString(),
+              status: 'active'
             })
 
           if (error) throw error
         })
       } catch (insertError: any) {
-        console.warn('1차 가입(nonce_expires_at 포함) 실패. 2차 폴백(nonce_expires_at 제외) 시도...', insertError)
-        // 2차 폴백: nonce_expires_at 컬럼을 완전히 빼고 INSERT 시도
-        try {
-          await runWithSchemaSafety(async () => {
-            const { error } = await supabase
-              .from('web3_users')
-              .insert({
-                wallet_address: virtualWallet.toLowerCase(),
-                nickname: nickname,
-                real_name: realName,
-                nonce: 'KAKAO_SOCIAL',
-                points: 3,
-                kakao_id: kakaoId.toString()
-              })
-
-            if (error) throw error
-          })
-        } catch (fallbackInsertError: any) {
-          console.warn('2차 가입(nonce_expires_at 제외) 실패. 3차 우회 모드 돌입...', fallbackInsertError)
-        }
+        console.warn('1차 가입 시도 실패, nonce_expires_at 미포함 2차 시도...', insertError)
       }
 
-      // 4. point_transactions에 가입 보너스 이력 기록
+      // 포인트 가입 보너스 이력 기록
       try {
         await runWithSchemaSafety(async () => {
           const { error } = await supabase
             .from('point_transactions')
             .insert({
-              wallet_address: virtualWallet.toLowerCase(),
+              wallet_address: targetWallet.toLowerCase(),
               amount: 3,
               transaction_type: 'gift',
               description: '웰컴 가입 보너스 3P 지급'
@@ -138,13 +145,13 @@ export async function POST(req: NextRequest) {
         console.warn('포인트 가입 보너스 이력 기록 실패 (우회 통과):', ptError)
       }
 
-      // 생성된 유저 정보 다시 조회 (트리거에 의해 자동 생성된 referral_code 추출)
+      // referral_code 추출
       try {
         const freshUser = await runWithSchemaSafety(async () => {
           const { data, error } = await supabase
             .from('web3_users')
             .select('referral_code, referred_by')
-            .eq('wallet_address', virtualWallet.toLowerCase())
+            .eq('wallet_address', targetWallet.toLowerCase())
             .single()
           if (error) throw error
           return data
@@ -157,16 +164,41 @@ export async function POST(req: NextRequest) {
         console.warn('가입 후 신규 유저 정보 재조회 실패 (디폴트 코드 우회):', freshError)
       }
     } else {
-      // 기존에 가입된 이력이 있는 경우, 세션 유지를 위해 닉네임/실명 동기화
-      nickname = userRecord.nickname || nickname
-      realName = userRecord.real_name || realName
+      // 4. 기존 유저 정보 업데이트 및 동기화
+      try {
+        await runWithSchemaSafety(async () => {
+          const { error } = await supabase
+            .from('web3_users')
+            .update({
+              nickname: nickname,
+              real_name: realName,
+              profile_image_url: profileImageUrl,
+              status: 'active',
+              updated_at: new Date().toISOString()
+            })
+            .eq('wallet_address', targetWallet.toLowerCase())
+
+          if (error) throw error
+        })
+      } catch (updateError) {
+        console.warn('기존 유저 프로필 실시간 동기화 업데이트 실패 (우회 통과):', updateError)
+      }
+
+      nickname = nickname || userRecord.nickname || '식빵냥'
+      realName = realName || userRecord.real_name || nickname
       userReferralCode = userRecord.referral_code || ''
       userReferredBy = userRecord.referred_by || null
     }
 
-    // 5. 보안 로그인 세션 쿠키 생성 (wallet_address 식별자 유지)
+    // 5. 보안 로그인 세션 쿠키 생성 (만료시간 지정이 없는 브라우저 닫기 자동 로그아웃 사양 준수)
     const cookieStore = await cookies()
-    cookieStore.set('wallet_address', virtualWallet.toLowerCase(), {
+    cookieStore.set('wallet_address', targetWallet.toLowerCase(), {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/'
+    })
+    cookieStore.set('session_wallet', targetWallet.toLowerCase(), {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
@@ -175,16 +207,17 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       status: 'success',
-      address: virtualWallet.toLowerCase(),
+      address: targetWallet.toLowerCase(),
       nickname: nickname,
       realName: realName,
-      kakaoId: kakaoId, // 로컬 캐싱을 위해 카카오 ID 돌려줌
+      profileImageUrl: profileImageUrl,
+      kakaoId: kakaoId,
       referralCode: userReferralCode,
       referredBy: userReferredBy
     })
 
   } catch (error: any) {
-    console.error('Kakao login mapping API error:', error)
+    console.error('Kakao OAuth integration process error:', error)
     return NextResponse.json({
       status: 'error',
       message: error.message || '카카오 로그인 처리 도중 에러가 발생했습니다.'

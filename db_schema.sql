@@ -14,7 +14,9 @@ CREATE TABLE IF NOT EXISTS public.web3_users (
     kakao_id TEXT UNIQUE,
     real_name TEXT,
     push_subscription JSONB,
-    pending_emoji_notifications INTEGER DEFAULT 0
+    pending_emoji_notifications INTEGER DEFAULT 0,
+    profile_image_url TEXT,
+    status TEXT DEFAULT 'active'
 );
 
 -- 코멘트 추가
@@ -25,6 +27,8 @@ COMMENT ON COLUMN public.web3_users.kakao_id IS '카카오 소셜 회원 로그�
 COMMENT ON COLUMN public.web3_users.real_name IS '카카오 본인인증 검증 실제 실명';
 COMMENT ON COLUMN public.web3_users.push_subscription IS '웹 푸시 브라우저 고유 키 저장용';
 COMMENT ON COLUMN public.web3_users.pending_emoji_notifications IS '미확인 완성 세트 개수';
+COMMENT ON COLUMN public.web3_users.profile_image_url IS '카카오 고해상도 프로필 이미지 저장';
+COMMENT ON COLUMN public.web3_users.status IS '유저 계정 활성화 상태';
 
 -- 2. emojis 테이블 생성 (이모티콘 파일 메타데이터 및 NFT 소유권 관리)
 CREATE TABLE IF NOT EXISTS public.emojis (
@@ -36,7 +40,9 @@ CREATE TABLE IF NOT EXISTS public.emojis (
     file_path TEXT NOT NULL,
     is_nft BOOLEAN DEFAULT false,
     nft_token_id TEXT,
-    created_at TIMESTAMPTZ DEFAULT now()
+    created_at TIMESTAMPTZ DEFAULT now(),
+    status TEXT DEFAULT 'completed',
+    is_viewed BOOLEAN DEFAULT true
 );
 
 -- 기본값 설정: owner_wallet이 명시되지 않으면 creator_wallet과 동일하게 세팅

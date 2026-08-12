@@ -33,6 +33,7 @@ import AnimatedPointsBadge from '@/components/AnimatedPointsBadge'
 import Footer from '@/components/Footer'
 import TermsModal from '@/components/TermsModal'
 import SessionGuard from '@/components/SessionGuard'
+import CelebrationModal from '@/components/CelebrationModal'
 import { ShoppingBag } from 'lucide-react'
 
 interface HistoryItem {
@@ -103,6 +104,8 @@ export default function Home() {
   const [kakaoNickname, setKakaoNickname] = useState<string>('')
   const [kakaoIdInput, setKakaoIdInput] = useState<string>('')
   const [kakaoRealName, setKakaoRealName] = useState<string>('')
+  const [kakaoProfileImg, setKakaoProfileImg] = useState<string>('/default-avatar.png')
+  const [profileAgree, setProfileAgree] = useState<boolean>(true)
   const [paymentMethod, setPaymentMethod] = useState<string>('toss') // 'toss' | 'kakao' | 'culture'
 
   // 마이펫 실사 스티커 제작 모드 상태 변수
@@ -146,8 +149,46 @@ export default function Home() {
       setWalletAddress(stored)
       fetchPoints(stored)
       subscribeToWebPush(stored)
+      checkUnreadEmojis(stored)
     }
   }, [])
+
+  // 완공 축하 세레머니 모달 관련 상태
+  const [showCelebration, setShowCelebration] = useState<boolean>(false)
+  const [unreadEmojiCount, setUnreadEmojiCount] = useState<number>(0)
+
+  // 미확인 완성 이모지 세트 여부 1회성 탐색
+  const checkUnreadEmojis = async (addr: string) => {
+    try {
+      const res = await fetch(`/api/user/unread-emojis?wallet=${addr.toLowerCase()}`)
+      const data = await res.json()
+      if (data.status === 'success' && data.count > 0) {
+        setUnreadEmojiCount(data.count)
+        setShowCelebration(true)
+        // 화면 전역 오로라 폭죽 세레머니 트리거 실행!
+        triggerGrandCannon()
+      }
+    } catch (err) {
+      console.error('Check unread emojis count error:', err)
+    }
+  }
+
+  // 보관함에서 확인 완료 클릭 이벤트 핸들러
+  const handleConfirmCelebration = async () => {
+    setShowCelebration(false)
+    if (!walletAddress) return
+    try {
+      await fetch('/api/user/unread-emojis', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ walletAddress })
+      })
+      // 보관함 히스토리 강제 리프레시 갱신
+      fetchHistory(walletAddress)
+    } catch (err) {
+      console.error('Confirm unread emojis error:', err)
+    }
+  }
 
   // Web Push VAPID 키 변환용 헬퍼 함수
   const urlBase64ToUint8Array = (base64String: string) => {
@@ -292,10 +333,24 @@ export default function Home() {
   // 모의 카카오 간편 소셜 로그인 처리 함수
   const handleKakaoLogin = async (id?: string, name?: string, realName?: string) => {
     try {
+      const kakao_account = {
+        profile: {
+          nickname: name || '식빵냥',
+          profile_image_url: profileAgree ? `https://api.dicebear.com/7.x/adventurer/svg?seed=${encodeURIComponent(name || '식빵냥')}` : '/default-avatar.png',
+          thumbnail_image_url: profileAgree ? `https://api.dicebear.com/7.x/adventurer/svg?seed=${encodeURIComponent(name || '식빵냥')}` : '/default-avatar.png',
+          is_default_image: !profileAgree
+        }
+      }
+
       const res = await fetch('/api/auth/kakao', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ kakaoId: id || '', nickname: name || '', realName: realName || '' })
+        body: JSON.stringify({
+          kakaoId: id || '',
+          nickname: name || '',
+          realName: realName || '',
+          kakao_account: kakao_account
+        })
       })
       const data = await res.json()
       if (data.status === 'success') {
@@ -305,10 +360,13 @@ export default function Home() {
         setUserReferredBy(data.referredBy || null)
         setKakaoNickname(data.nickname || name || '식빵냥')
         setKakaoRealName(data.realName || realName || '')
+        setKakaoProfileImg(data.profileImageUrl || '/default-avatar.png')
         setTosChecked(false)
         setPrivacyChecked(false)
         fetchPoints(data.address)
         subscribeToWebPush(data.address)
+        checkUnreadEmojis(data.address)
+        checkUnreadEmojis(data.address)
         subscribeToWebPush(data.address)
         setShowKakaoModal(false)
         setShowLoginModal(false)
@@ -364,6 +422,7 @@ export default function Home() {
         setUserReferredBy(data.referredBy || null)
         setKakaoNickname(data.nickname || '')
         setKakaoRealName(data.realName || '')
+        setKakaoProfileImg(data.profileImageUrl || '/default-avatar.png')
         fetchPointHistory(addr) // 거래 내역 실시간 연쇄 갱신
       }
     } catch (e) {
@@ -858,12 +917,31 @@ export default function Home() {
                     }
                     setShowProfileDropdown(!showProfileDropdown)
                   }}
-                  className="flex items-center gap-2 bg-gradient-to-r from-slate-50 to-slate-100 hover:from-slate-100 hover:to-slate-200 text-slate-700 px-3.5 py-1.5 rounded-2xl text-xs font-extrabold border border-slate-200/60 shadow-sm transition-all active:scale-95 cursor-pointer"
+                  className="flex items-center gap-3 bg-slate-50 hover:bg-slate-100 px-3 py-1.5 rounded-full border border-slate-200/60 transition-colors text-left focus:outline-none cursor-pointer group"
                 >
-                  <span className="w-5 h-5 rounded-full bg-indigo-50 border border-indigo-100 flex items-center justify-center text-xs">
-                    🍞
-                  </span>
-                  <span className="max-w-[70px] truncate">{kakaoRealName || kakaoNickname || '식빵냥'}</span>
+                  {/* 1. 카카오 아바타 이미지 */}
+                  <div className="relative w-8 h-8 rounded-full overflow-hidden border border-slate-200">
+                    <img
+                      src={kakaoProfileImg || '/default-avatar.png'}
+                      alt="Profile"
+                      className="object-cover w-full h-full"
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).src = '/default-avatar.png'
+                      }}
+                    />
+                  </div>
+
+                  {/* 2. 실제 이름 및 회원 표시 */}
+                  <div className="flex flex-col">
+                    <span className="max-w-[75px] truncate text-xs font-bold text-slate-700">
+                      {kakaoRealName || kakaoNickname || '식빵냥'}
+                    </span>
+                    <span className="text-[9px] text-slate-400 font-medium leading-none mt-0.5">
+                      에임하이 회원
+                    </span>
+                  </div>
+
+                  {/* 3. 보유 포인트 배지 */}
                   <AnimatedPointsBadge points={points} delta={pointsDelta} />
                 </button>
 
@@ -1861,6 +1939,24 @@ export default function Home() {
                 </div>
               </div>
 
+              {/* 카카오 개인 프로필 연동 동의 체크박스 */}
+              <div className="bg-gray-50 p-4 rounded-2xl border border-gray-100 text-left">
+                <div className="flex items-center justify-between text-[11px]">
+                  <label className="flex items-center gap-2 cursor-pointer text-gray-600 font-bold select-none">
+                    <input
+                      type="checkbox"
+                      checked={profileAgree}
+                      onChange={(e) => setProfileAgree(e.target.checked)}
+                      className="w-3.5 h-3.5 rounded border-gray-300 text-yellow-500 focus:ring-yellow-500 cursor-pointer"
+                    />
+                    <span>(선택) 카카오톡 프로필 사진 연동 허용</span>
+                  </label>
+                </div>
+                <p className="text-[9px] text-gray-400 mt-1">
+                  동의하지 않을 경우, 서비스 내 기본 캐릭터 프로필 아바타로 적용됩니다.
+                </p>
+              </div>
+
               {/* 필수 약관 동의 체크박스 */}
               <div className="space-y-2.5 bg-gray-50 p-4 rounded-2xl border border-gray-100 text-left">
                 <div className="flex items-center justify-between text-[11px]">
@@ -1950,6 +2046,13 @@ export default function Home() {
       {walletAddress && (
         <SessionGuard onLogout={disconnectWallet} />
       )}
+
+      {/* 완공 축하 세레머니 모달 */}
+      <CelebrationModal
+        isOpen={showCelebration}
+        onConfirm={handleConfirmCelebration}
+        unreadCount={unreadEmojiCount}
+      />
     </div>
   )
 }

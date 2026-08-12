@@ -30,3 +30,18 @@ SELECT public.force_api_schema_reload();
 ALTER TABLE public.web3_users ADD COLUMN IF NOT EXISTS push_subscription JSONB;
 ALTER TABLE public.web3_users ADD COLUMN IF NOT EXISTS pending_emoji_notifications INTEGER DEFAULT 0;
 SELECT public.force_api_schema_reload();
+
+-- 6. emojis 테이블에 status 및 is_viewed 컬럼 안전 추가 및 캐시 리로드
+ALTER TABLE public.emojis ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'completed';
+ALTER TABLE public.emojis ADD COLUMN IF NOT EXISTS is_viewed BOOLEAN DEFAULT true;
+SELECT public.force_api_schema_reload();
+
+-- 7. web3_users 테이블에 profile_image_url 및 status 컬럼 물리 추가 및 캐시 리로드
+ALTER TABLE public.web3_users ADD COLUMN IF NOT EXISTS profile_image_url TEXT;
+ALTER TABLE public.web3_users ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'active';
+SELECT public.force_api_schema_reload();
+
+-- 7. web3_users 테이블에 profile_image_url 컬럼 안전 추가 및 캐시 리로드
+ALTER TABLE public.web3_users ADD COLUMN IF NOT EXISTS profile_image_url TEXT;
+SELECT public.force_api_schema_reload();
+

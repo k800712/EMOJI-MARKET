@@ -19,6 +19,8 @@ export interface Database {
           created_at: string | null
           updated_at: string | null
           kakao_id: string | null
+          real_name: string | null
+          profile_image_url: string | null
         }
         Insert: {
           wallet_address: string
@@ -29,6 +31,8 @@ export interface Database {
           created_at?: string | null
           updated_at?: string | null
           kakao_id?: string | null
+          real_name?: string | null
+          profile_image_url?: string | null
         }
         Update: {
           wallet_address?: string
@@ -39,6 +43,8 @@ export interface Database {
           created_at?: string | null
           updated_at?: string | null
           kakao_id?: string | null
+          real_name?: string | null
+          profile_image_url?: string | null
         }
         Relationships: []
       }
