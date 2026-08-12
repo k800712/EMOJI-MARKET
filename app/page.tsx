@@ -153,6 +153,32 @@ export default function Home() {
     }
   }, [])
 
+  // 실제 카카오 OAuth 2.0 표준 인가 로그인 리다이렉트 실행
+  const connectKakaoRealOAuth = () => {
+    if (typeof window === 'undefined') return
+    const client_id = 'c1206f4777e1bf356c39a04a37b3f9ff'
+    const redirect_uri = `${window.location.origin}/api/auth/kakao/callback`
+    const kakaoAuthUrl = `https://kauth.kakao.com/oauth/authorize?client_id=${client_id}&redirect_uri=${encodeURIComponent(redirect_uri)}&response_type=code`
+    window.location.href = kakaoAuthUrl
+  }
+
+  // OAuth 리다이렉트 복귀 시 쿼리 파라미터 감지 및 로그인 세션 수립
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search)
+      const loginSuccess = params.get('login_success')
+      const wallet = params.get('wallet')
+      if (loginSuccess === 'true' && wallet) {
+        localStorage.setItem('wallet_session', wallet)
+        setWalletAddress(wallet)
+        fetchPoints(wallet)
+        subscribeToWebPush(wallet)
+        checkUnreadEmojis(wallet)
+        window.history.replaceState({}, document.title, window.location.pathname)
+      }
+    }
+  }, [])
+
   // 완공 축하 세레머니 모달 관련 상태
   const [showCelebration, setShowCelebration] = useState<boolean>(false)
   const [unreadEmojiCount, setUnreadEmojiCount] = useState<number>(0)
@@ -1808,22 +1834,14 @@ export default function Home() {
             </div>
 
             <div className="space-y-3 pt-2">
-              {/* 카카오 소셜 로그인 버튼 */}
+              {/* 카카오 소셜 로그인 버튼 (실제 OAuth 2.0 표준 로그인) */}
               <button
                 type="button"
-                onClick={() => {
-                  setShowLoginModal(false)
-                  setKakaoNickname('')
-                  setKakaoIdInput('')
-                  setKakaoRealName('')
-                  setTosChecked(false)
-                  setPrivacyChecked(false)
-                  setShowKakaoModal(true)
-                }}
+                onClick={connectKakaoRealOAuth}
                 className="w-full py-3.5 bg-[#FEE500] hover:bg-[#F0D200] text-[#191919] font-black rounded-2xl text-xs transition-all active:scale-[0.98] shadow-sm shadow-yellow-500/10 flex items-center justify-center gap-2"
               >
                 <span className="text-sm">💬</span>
-                카카오 계정으로 3초 로그인
+                카카오 계정으로 3초 로그인 (OAuth 2.0)
               </button>
 
               {/* 메타마스크 지갑 연결 버튼 */}
@@ -1835,6 +1853,24 @@ export default function Home() {
               >
                 <span className="text-sm">🦊</span>
                 메타마스크 지갑 연결 (Web3)
+              </button>
+
+              {/* 개발자용 모의 카카오 로그인 버튼 (Fallback 테스트용) */}
+              <button
+                type="button"
+                onClick={() => {
+                  setShowLoginModal(false)
+                  setKakaoNickname('')
+                  setKakaoIdInput('')
+                  setKakaoRealName('')
+                  setTosChecked(false)
+                  setPrivacyChecked(false)
+                  setShowKakaoModal(true)
+                }}
+                className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold rounded-2xl text-[11px] transition-all active:scale-[0.98] flex items-center justify-center gap-2"
+              >
+                <span>🧪</span>
+                개발자 모의 소셜 가입/로그인 (테스트용)
               </button>
             </div>
 

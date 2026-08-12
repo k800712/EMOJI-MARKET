@@ -45,3 +45,13 @@ SELECT public.force_api_schema_reload();
 ALTER TABLE public.web3_users ADD COLUMN IF NOT EXISTS profile_image_url TEXT;
 SELECT public.force_api_schema_reload();
 
+-- 8. web3_users 테이블 RLS 활성화 및 익명/인증 사용자 무제한 접근 허용 정책 (회원가입 에러 예방)
+ALTER TABLE public.web3_users ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow anonymous and authenticated users access to web3_users" ON public.web3_users;
+CREATE POLICY "Allow anonymous and authenticated users access to web3_users" 
+ON public.web3_users FOR ALL 
+TO anon, authenticated 
+USING (true) 
+WITH CHECK (true);
+SELECT public.force_api_schema_reload();
+
