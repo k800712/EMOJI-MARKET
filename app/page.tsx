@@ -35,6 +35,7 @@ import TermsModal from '@/components/TermsModal'
 import SessionGuard from '@/components/SessionGuard'
 import CelebrationModal from '@/components/CelebrationModal'
 import { ShoppingBag } from 'lucide-react'
+import { compressImage } from '@/utils/imageCompressor'
 
 interface HistoryItem {
   uuid: string
@@ -141,6 +142,39 @@ export default function Home() {
     }
     document.addEventListener('mousedown', handleOutsideClick)
     return () => document.removeEventListener('mousedown', handleOutsideClick)
+  }, [])
+
+  // 전역 fetch 인터셉터: 401, 403 에러 발생 시에만 강제 로그아웃을 유도하고, 413이나 500 등은 경고창만 띄움
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+
+    const originalFetch = window.fetch
+    window.fetch = async (...args) => {
+      try {
+        const response = await originalFetch(...args)
+        
+        // 401 Unauthorized 또는 403 Forbidden 발생 시에만 로그아웃 수행
+        if (response.status === 401 || response.status === 403) {
+          console.warn(`[API Security Guard] 인증 만료 감지 (${response.status}). 세션을 종료합니다.`)
+          disconnectWallet()
+        }
+        // 413 Payload Too Large 발생 시 별도 얼럿 표시
+        else if (response.status === 413) {
+          console.error('[API Security Guard] 413 Payload Too Large 감지.')
+          alert('🚨 업로드한 이미지 용량이 너무 큽니다. 자동으로 압축 처리를 진행하지만, 더 작은 이미지를 선택해 주세요.')
+        }
+        
+        return response
+      } catch (error: any) {
+        // Network abort나 기타 에러의 경우 세션을 유지
+        console.error('[API Security Guard] API 요청 네트워크 오류:', error)
+        throw error
+      }
+    }
+
+    return () => {
+      window.fetch = originalFetch
+    }
   }, [])
 
   useEffect(() => {
@@ -591,9 +625,23 @@ export default function Home() {
   // 마이펫 이미지 업로드 및 배경 제거(누끼) API 호출
   const handlePetUpload = async (file: File) => {
     setIsNoBgLoading(true)
+
+    // 업로드 즉시 브라우저 로컬 미리보기(Preview) URL 생성 및 설정
+    const objectUrl = URL.createObjectURL(file)
+    setPreviewUrl(objectUrl)
+
     try {
+      // 업로드 전 이미지 압축 수행 (Vercel 4.5MB 제한 우회)
+      console.log('[Image Compressor] 마이펫 이미지 압축 시도 중...')
+      const compressedBlob = await compressImage(file, 1200, 0.75)
+      const compressedFile = new File([compressedBlob], file.name, {
+        type: compressedBlob.type || 'image/jpeg',
+        lastModified: Date.now()
+      })
+      console.log(`[Image Compressor] 압축 완료: ${file.size} bytes -> ${compressedFile.size} bytes`)
+
       const formData = new FormData()
-      formData.append('image', file)
+      formData.append('image', compressedFile)
 
       const res = await fetch('/api/remove-bg', {
         method: 'POST',
@@ -602,14 +650,16 @@ export default function Home() {
       const data = await res.json()
       if (data.status === 'success') {
         setNoBgImageUrl(data.image)
-        setUploadedFile(file)
+        setUploadedFile(compressedFile)
       } else {
         alert(`배경 제거 실패: ${data.message || '알 수 없는 오류'}`)
+        setPreviewUrl(null)
       }
       setIsNoBgLoading(false)
     } catch (err: any) {
       console.error(err)
       alert('펫 이미지 업로드 중 에러가 발생했습니다.')
+      setPreviewUrl(null)
       setIsNoBgLoading(false)
     }
   }
@@ -724,6 +774,21 @@ export default function Home() {
     setLoadingPercentText(0)
 
     const wallet = localStorage.getItem('wallet_session') || 'guest'
+
+    // 업로드 전 이미지 압축 수행 (Vercel 4.5MB 제한 우회)
+    console.log('[Image Compressor] 일러스트 생성 이미지 압축 시도 중...')
+    let finalUploadFile = uploadedFile
+    try {
+      const compressedBlob = await compressImage(uploadedFile, 1200, 0.75)
+      finalUploadFile = new File([compressedBlob], uploadedFile.name, {
+        type: compressedBlob.type || 'image/jpeg',
+        lastModified: Date.now()
+      })
+      console.log(`[Image Compressor] 압축 완료: ${uploadedFile.size} bytes -> ${finalUploadFile.size} bytes`)
+    } catch (compressErr) {
+      console.error('[Image Compressor] 압축 실패, 원본 전송 전환:', compressErr)
+    }
+
     // 선택된 수량만큼 상황극 프롬프트를 슬라이싱하여 큐 구성
     const tasks = KAKAO_SITUATIONS.slice(0, generateQty)
     let completedCount = 0
@@ -741,7 +806,7 @@ export default function Home() {
 
         try {
           const formData = new FormData()
-          formData.append('emoji_image', uploadedFile)
+          formData.append('emoji_image', finalUploadFile)
           formData.append('style_type', selectedStyle) // Webtoon, Pixel, 3D Clay
           formData.append('target_country', selectedCountry)
           formData.append('user_wallet', wallet)
