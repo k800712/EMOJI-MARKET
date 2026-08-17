@@ -312,6 +312,8 @@ export async function POST(req: NextRequest) {
         file_path: filePath,
         creator_wallet: userWallet === 'guest' ? null : userWallet.toLowerCase(),
         owner_wallet: userWallet === 'guest' ? null : userWallet.toLowerCase(),
+        status: 'active',
+        is_viewed: false
       })
 
     if (dbError) throw dbError
