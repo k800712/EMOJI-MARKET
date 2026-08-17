@@ -1205,13 +1205,19 @@ export default function Home() {
                     </div>
                   </div>
                 ) : (
-                  <div className="flex flex-col items-center gap-3 relative z-10 w-full max-w-[200px]" onClick={(e) => e.stopPropagation()}>
-                    <img src={previewUrl} alt="Preview" className="w-full aspect-square object-cover rounded-xl border border-gray-200 shadow-sm" />
+                  <div className="flex flex-col items-center gap-3 relative z-10 w-full max-w-[240px] p-2 bg-white rounded-2xl border border-gray-100 shadow-xl shadow-gray-200/50 hover:shadow-2xl hover:shadow-gray-200/80 transition-all duration-300 group/card" onClick={(e) => e.stopPropagation()}>
+                    <div className="w-full aspect-square overflow-hidden rounded-xl bg-gray-50 border border-gray-100 relative">
+                      <img 
+                        src={previewUrl} 
+                        alt="Preview" 
+                        className="w-full h-full object-cover transition-transform duration-500 group-hover/card:scale-105" 
+                      />
+                    </div>
                     <button 
                       type="button" 
                       onClick={resetUpload}
-                      disabled={isPetGenerating}
-                      className="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-red-500 hover:bg-red-600 text-white flex items-center justify-center text-xs shadow-md transition-colors disabled:opacity-50"
+                      disabled={isPetGenerating || isGenerating}
+                      className="absolute -top-1.5 -right-1.5 w-7 h-7 rounded-full bg-gray-900/90 hover:bg-red-500 text-white flex items-center justify-center shadow-lg hover:rotate-90 transition-all duration-300 disabled:opacity-50"
                     >
                       <X className="w-4 h-4" />
                     </button>
