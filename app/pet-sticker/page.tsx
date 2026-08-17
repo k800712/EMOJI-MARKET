@@ -35,7 +35,7 @@ import TermsModal from '@/components/TermsModal'
 import SessionGuard from '@/components/SessionGuard'
 import CelebrationModal from '@/components/CelebrationModal'
 import { ShoppingBag } from 'lucide-react'
-import { compressImage } from '@/utils/imageCompressor'
+import { compressImage, compressMobileImage } from '@/utils/imageCompressor'
 
 interface HistoryItem {
   uuid: string
@@ -76,16 +76,19 @@ export default function Home() {
 
   // 메모리 누수 방지를 위한 previewUrl Cleanup 훅
   useEffect(() => {
+    const currentUrl = previewUrl
     return () => {
-      if (previewUrl && previewUrl.startsWith('blob:')) {
-        URL.revokeObjectURL(previewUrl)
+      if (currentUrl && currentUrl.startsWith('blob:')) {
+        console.log('[Memory Cleanup] Revoking preview URL:', currentUrl)
+        URL.revokeObjectURL(currentUrl)
       }
     }
   }, [previewUrl])
-  const [selectedStyle, setSelectedStyle] = useState<string | null>(null)
+  const [selectedStyle, setSelectedStyle] = useState<string | null>('CLAY')
   const [selectedCountry, setSelectedCountry] = useState<string>('KR')
   const [customPrompt, setCustomPrompt] = useState<string>('')
   const [isGenerating, setIsGenerating] = useState<boolean>(false)
+  const [isCompressing, setIsCompressing] = useState<boolean>(false)
   const [loadingStepText, setLoadingStepText] = useState<string>('1단계: 대기열 등록 완료')
   const [loadingPercentText, setLoadingPercentText] = useState<number>(15)
   const [serverBusy, setServerBusy] = useState<boolean>(false)
@@ -630,11 +633,23 @@ export default function Home() {
     setDragOver(false)
   }
 
-  const handleDrop = (e: React.DragEvent) => {
+  const handleDrop = async (e: React.DragEvent) => {
     e.preventDefault()
     setDragOver(false)
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      handleFile(e.dataTransfer.files[0])
+      localStorage.setItem('emoji_market_upload_lock', 'true')
+      const file = e.dataTransfer.files[0]
+      setIsCompressing(true)
+      try {
+        console.log('[Image Compressor] 드롭 파일 선제 압축 기동...')
+        const compressedFile = await compressMobileImage(file)
+        handleFile(compressedFile)
+      } catch (compressErr) {
+        console.error('[Image Compressor] 드롭 압축 에러, 원본 폴백:', compressErr)
+        handleFile(file)
+      } finally {
+        setIsCompressing(false)
+      }
     }
   }
 
@@ -644,19 +659,18 @@ export default function Home() {
       localStorage.setItem('emoji_market_upload_lock', 'true')
 
       const file = e.target.files[0]
+      setIsCompressing(true)
       // 모바일 OOM 방지를 위한 800px 극단적 선제 압축 적용
       console.log('[Image Compressor] 모바일 OOM 방지 극단적 선제 압축 기동 (800px, 70% quality)...')
       try {
-        const compressedBlob = await compressImage(file, 800, 0.70)
-        const compressedFile = new File([compressedBlob], file.name, {
-          type: compressedBlob.type || 'image/jpeg',
-          lastModified: Date.now()
-        })
+        const compressedFile = await compressMobileImage(file)
         console.log(`[Image Compressor] 선제 압축 완료: ${file.size} -> ${compressedFile.size} bytes`)
         handleFile(compressedFile)
       } catch (compressErr) {
         console.error('[Image Compressor] 선제 압축 에러, 원본 폴백:', compressErr)
         handleFile(file)
+      } finally {
+        setIsCompressing(false)
       }
     }
   }
@@ -670,17 +684,8 @@ export default function Home() {
     setPreviewUrl(objectUrl)
 
     try {
-      // 업로드 전 이미지 압축 수행 (Vercel 4.5MB 제한 우회)
-      console.log('[Image Compressor] 마이펫 이미지 압축 시도 중...')
-      const compressedBlob = await compressImage(file, 1024, 0.70)
-      const compressedFile = new File([compressedBlob], file.name, {
-        type: compressedBlob.type || 'image/jpeg',
-        lastModified: Date.now()
-      })
-      console.log(`[Image Compressor] 압축 완료: ${file.size} bytes -> ${compressedFile.size} bytes`)
-
       const formData = new FormData()
-      formData.append('image', compressedFile)
+      formData.append('image', file) // 이미 선제 압축된 파일 객체 전송
 
       const res = await fetch('/api/remove-bg', {
         method: 'POST',
@@ -689,7 +694,7 @@ export default function Home() {
       const data = await res.json()
       if (data.status === 'success') {
         setNoBgImageUrl(data.image)
-        setUploadedFile(compressedFile)
+        setUploadedFile(file)
       } else {
         alert(`배경 제거 실패: ${data.message || '알 수 없는 오류'}`)
         setPreviewUrl(null)
@@ -719,22 +724,43 @@ export default function Home() {
       alert('🐶 반려동물 사진을 먼저 업로드해 주세요.')
       return
     }
+    if (!selectedStyle) {
+      alert('🎨 제작할 프리미엄 스타일을 선택해 주세요.')
+      return
+    }
     if (points < 8) {
       alert('⚠️ 보유 포인트가 부족합니다. 스티커를 제작하려면 최소 8 P가 필요합니다.')
       return
     }
 
     setIsPetGenerating(true)
+
+    // 햅틱 진동 피드백 작동 (시작 시)
+    if (typeof navigator !== 'undefined' && navigator.vibrate) {
+      navigator.vibrate([100, 50, 100])
+    }
+
+    // 생성 가동 중에 2초 주기로 햅틱 잔진동 피드백 작동
+    const hapticInterval = setInterval(() => {
+      if (typeof navigator !== 'undefined' && navigator.vibrate) {
+        navigator.vibrate([50, 30, 50])
+      }
+    }, 2000)
+
     try {
       const response = await fetch('/api/generate/pet-sticker', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           image: noBgImageUrl,
-          walletAddress
+          walletAddress,
+          style: selectedStyle
         })
       })
       const data = await response.json()
+      
+      clearInterval(hapticInterval)
+
       if (data.status === 'success') {
         setPetStickers(data.stickers)
         setPetStickerZip(data.zip)
@@ -743,8 +769,9 @@ export default function Home() {
         // 10대 도파민 폭발 축하 그랜드 캐논 발사!
         triggerGrandCannon()
 
+        // 햅틱 진동 피드백 작동 (성공 시 완료 모션)
         if (typeof navigator !== 'undefined' && navigator.vibrate) {
-          navigator.vibrate([100, 50, 100])
+          navigator.vibrate([200, 100, 200, 100, 300])
         }
 
         // 보관함 실시간 새로고침
@@ -753,6 +780,7 @@ export default function Home() {
         alert(data.message || '마이펫 스티커 생성 중 실패했습니다.')
       }
     } catch (e: any) {
+      clearInterval(hapticInterval)
       console.error(e)
       alert('스티커 제작 중 네트워크 오류가 발생했습니다.')
     } finally {
@@ -770,13 +798,10 @@ export default function Home() {
       handlePetUpload(file)
     } else {
       setUploadedFile(file)
-      const reader = new FileReader()
-      reader.onload = (e) => {
-        setPreviewUrl(e.target?.result as string)
-        setIsSliderVisible(false)
-        setCanvasResult(null)
-      }
-      reader.readAsDataURL(file)
+      // OOM 방지: FileReader 대신 오브젝트 URL 직접 바인딩
+      setPreviewUrl(URL.createObjectURL(file))
+      setIsSliderVisible(false)
+      setCanvasResult(null)
     }
   }
 
@@ -1140,6 +1165,7 @@ export default function Home() {
                   onClick={() => {
                     setActiveMode('illust')
                     resetUpload()
+                    setSelectedStyle('Webtoon') // illust 모드 기본 스타일
                   }}
                   className={`flex-1 text-center py-2.5 text-xs font-extrabold rounded-xl transition-all cursor-pointer ${
                     activeMode === 'illust'
@@ -1154,6 +1180,7 @@ export default function Home() {
                   onClick={() => {
                     setActiveMode('pet')
                     resetUpload()
+                    setSelectedStyle('CLAY') // pet 모드 기본 스타일
                   }}
                   className={`flex-1 text-center py-2.5 text-xs font-extrabold rounded-xl transition-all cursor-pointer ${
                     activeMode === 'pet'
@@ -1164,13 +1191,77 @@ export default function Home() {
                   🐶 마이펫 실사 스티커 제작
                 </button>
               </div>
+
+              {/* 프리미엄 스타일 셀렉터 */}
+              {activeMode === 'pet' && (
+                <div className="mb-6 animate-fade-in">
+                  <label className="block text-xs font-extrabold text-gray-500 mb-2.5">
+                    ✨ 프리미엄 스타일 선택 (필수)
+                  </label>
+                  <div className="grid grid-cols-3 gap-3">
+                    {[
+                      {
+                        id: 'CLAY',
+                        title: '식빵이 친구들',
+                        subtitle: '3D 클레이',
+                        desc: '귀엽고 통통한 찰흙 인형 스타일',
+                        emoji: '🍞'
+                      },
+                      {
+                        id: 'DISNEY',
+                        title: '디즈니 펫',
+                        subtitle: '애니메이션',
+                        desc: '모험을 떠날 3D 캐릭터 스타일',
+                        emoji: '🏰'
+                      },
+                      {
+                        id: 'WATERCOLOR',
+                        title: '파스텔 손그림',
+                        subtitle: '일러스트',
+                        desc: '따뜻하고 아기자기한 색연필 화풍',
+                        emoji: '🎨'
+                      }
+                    ].map((style) => (
+                      <div
+                        key={style.id}
+                        onClick={() => setSelectedStyle(style.id)}
+                        className={`border-2 p-3.5 rounded-2xl cursor-pointer transition-all duration-300 flex flex-col justify-between h-32 relative overflow-hidden group select-none ${
+                          selectedStyle === style.id
+                            ? 'ring-4 ring-brand-primary/20 border-brand-primary bg-blue-50/20 shadow-md scale-[0.98]'
+                            : 'border-gray-200 bg-white hover:border-gray-300 hover:shadow-sm'
+                        }`}
+                      >
+                        <div className="z-10">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[16px]">{style.emoji}</span>
+                            {selectedStyle === style.id && (
+                              <span className="w-4 h-4 rounded-full bg-brand-primary flex items-center justify-center text-white text-[10px] font-bold">
+                                ✓
+                              </span>
+                            )}
+                          </div>
+                          <h3 className="text-xs font-black text-gray-800 mt-2 leading-tight">
+                            {style.title}
+                          </h3>
+                          <span className="text-[9px] font-extrabold text-brand-primary block mt-0.5">
+                            {style.subtitle}
+                          </span>
+                          <p className="text-[9px] text-gray-400 mt-1 leading-tight group-hover:text-gray-500">
+                            {style.desc}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
               
               <div 
                 onDragOver={handleDragOver}
                 onDragLeave={handleDragLeave}
                 onDrop={handleDrop}
                 onClick={() => {
-                  if (!isNoBgLoading && !isPetGenerating) {
+                  if (!isNoBgLoading && !isPetGenerating && !isCompressing) {
                     localStorage.setItem('emoji_market_upload_lock', 'true')
                     fileInputRef.current?.click()
                   }
@@ -1187,7 +1278,12 @@ export default function Home() {
                   className="hidden" 
                 />
                 
-                {isNoBgLoading ? (
+                {isCompressing ? (
+                  <div className="flex flex-col items-center gap-3 text-center">
+                    <div className="w-10 h-10 rounded-full border-2 border-brand-primary border-t-transparent animate-spin"></div>
+                    <p className="text-xs text-gray-400 mt-1">모바일 OOM 방지 극단 압축 기동 중 (JPEG 70%)...</p>
+                  </div>
+                ) : isNoBgLoading ? (
                   <div className="flex flex-col items-center gap-3 text-center">
                     <div className="w-10 h-10 rounded-full border-2 border-brand-primary border-t-transparent animate-spin"></div>
                     <p className="text-xs text-gray-400 mt-1">식빵이가 열심히 사진을 오려내고 있어요 🍞✂️...</p>
@@ -1312,7 +1408,7 @@ export default function Home() {
               {activeMode === 'pet' && isPetGenerating && (
                 <div className="mt-6 border-t border-gray-100 pt-6 flex flex-col items-center justify-center gap-3">
                   <div className="w-10 h-10 rounded-full border-2 border-brand-primary border-t-transparent animate-spin"></div>
-                  <p className="text-xs font-semibold text-gray-500">식빵이가 열심히 사진을 오려내고 있어요 🍞✂️...</p>
+                  <p className="text-xs font-semibold text-gray-500">식빵이가 열심히 사진을 분석해 마법을 부리는 중이에요... 🍞✨</p>
                 </div>
               )}
 

@@ -88,13 +88,25 @@ export async function POST(req: NextRequest) {
   try {
     console.log('[Step 1] 프론트엔드 이미지 수신 완료')
     const body = await req.json().catch(() => ({}))
-    const { image, walletAddress } = body
+    const { image, walletAddress, style } = body
 
     if (!image || !walletAddress) {
       return NextResponse.json({
         status: 'error',
         message: '필수 데이터(이미지, 지갑주소)가 부족합니다.'
       }, { status: 400 })
+    }
+
+    // 스타일별 프롬프트 정의
+    let stylePrompt = ""
+    const styleLower = (style || 'CLAY').toUpperCase()
+    if (styleLower === 'DISNEY') {
+      stylePrompt = "as a cute Disney-Pixar 3D animated character, fluffy fur, giant expressive eyes, highly detailed cartoon, white background, cinematic lighting"
+    } else if (styleLower === 'WATERCOLOR') {
+      stylePrompt = "as a cute hand-drawn watercolor illustration character, soft pastel colors, pencil sketch details, cozy anime aesthetic, transparent/white background"
+    } else {
+      // CLAY 기본값
+      stylePrompt = "as a cute 3D claymation character, clay art, smooth texture, chibi, white background, bold outlines, Pixar 3D rendering, rich details, masterwork --no photorealistic, realistic"
     }
 
     // 0. 블랙리스트 제재 어뷰저 차단 가드
@@ -264,17 +276,32 @@ export async function POST(req: NextRequest) {
       console.log(`[Sticker Generator] ${theme.label} 테마 생성 시작`)
       
       const themePrompt = theme.concept
-      // Denoising Strength 0.45 유사도 연출을 위한 3D Claymation 마스터 프롬프트 체이닝
-      const finalPrompt = `A premium mobile emoticon sticker of ${petDescription} as a cute 3D claymation character, chibi style, ${themePrompt}, pure #FFFFFF solid white background, bold stroke outlines, Pixar 3D rendering, rich details, masterwork --no photorealistic, realistic`
+      // 선택된 스타일에 따른 프롬프트 결합(Chaining)
+      const finalPrompt = `A premium mobile emoticon sticker of ${petDescription}, ${themePrompt}. ${stylePrompt}`
       
+      const base64Clean = image.replace(/^data:image\/\w+;base64,/, '')
+
       const imagenPayload = {
         contents: [
           {
             parts: [
-              { text: `Generate an image of: ${finalPrompt}. Return only the image output.` }
+              {
+                inlineData: {
+                  mimeType: "image/png",
+                  data: base64Clean
+                }
+              },
+              {
+                text: `Generate an image of: ${finalPrompt}. Return only the image output. Keep the pet's core features (eyes, nose, mouth, pose) clearly recognizable but transform the style.`
+              }
             ]
           }
-        ]
+        ],
+        // Google Imagen, Vertex AI 및 SDXL API 규격 호환을 위한 I2I 파라미터 매핑
+        image: base64Clean,
+        init_image: base64Clean,
+        strength: 0.50, // 변형 강도 0.45 ~ 0.52 사이 정밀 고정 (0.50)
+        denoising_strength: 0.50
       }
 
       let generatedBase64 = ""
@@ -432,12 +459,12 @@ export async function POST(req: NextRequest) {
         // 1. emojis 테이블에 8개 이모티콘 일괄 삽입
         const insertRows = imageResults.map(item => ({
           uuid: item.uuid,
-          style_type: 'Real', // 실사 이모티콘 스타일로 명시
+          style_type: (style || 'CLAY').toUpperCase(), // 사용자가 선택한 스타일 이름 저장
           file_path: item.filePath,
           creator_wallet: walletAddress.toLowerCase(),
           owner_wallet: walletAddress.toLowerCase(),
           status: 'completed',
-          is_viewed: true
+          is_viewed: false // 유저가 완공 모달에서 확인하기 전까지 미확인 상태 유지
         }))
 
         const { error: dbError } = await supabase
