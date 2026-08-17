@@ -119,7 +119,7 @@ export default function Home() {
   const [paymentMethod, setPaymentMethod] = useState<string>('toss') // 'toss' | 'kakao' | 'culture'
 
   // 마이펫 실사 스티커 제작 모드 상태 변수
-  const [activeMode, setActiveMode] = useState<'illust' | 'pet'>('illust')
+  const [activeMode, setActiveMode] = useState<'illust' | 'pet'>('pet')
   const { triggerGrandCannon } = useConfetti()
   const [showProfileDropdown, setShowProfileDropdown] = useState<boolean>(false)
   const [pointsDelta, setPointsDelta] = useState<number>(0)
