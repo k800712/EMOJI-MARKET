@@ -3,6 +3,9 @@ import { createClient } from '@/utils/supabase/server'
 import sharp from 'sharp'
 import JSZip from 'jszip'
 
+// sharp 캐시 무효화로 메모리 누수 방지 (비용 절감 및 서버 안정성 확보)
+sharp.cache(false)
+
 // 스키마 캐시 불일치 에러 및 일시적인 DB 커넥션 불안정을 방지하기 위한 안전 래퍼 함수
 async function runWithSchemaSafety<T>(operation: () => Promise<T>): Promise<T> {
   const maxRetries = 3
@@ -66,6 +69,7 @@ async function applyStickerStroke(imageBuffer: Buffer): Promise<Buffer> {
 
 export async function POST(req: NextRequest) {
   try {
+    console.log('[Step 1] 프론트엔드 이미지 수신 완료')
     const body = await req.json().catch(() => ({}))
     const { image, walletAddress } = body
 
@@ -222,9 +226,10 @@ export async function POST(req: NextRequest) {
     const imageResults = []
     const zip = new JSZip()
 
-    // 8종 합성 루프 실행
+    // Step 3: 8종 캔버스 합성
+    console.log('[Step 3] 8종 캔버스 합성 시작')
     for (const theme of stickerThemes) {
-      const composition = await sharp(strokedAnimal)
+      let composition = await sharp(strokedAnimal)
         .composite([{
           input: Buffer.from(theme.svg),
           blend: 'over'
@@ -233,48 +238,187 @@ export async function POST(req: NextRequest) {
         .toBuffer()
 
       const base64Img = `data:image/png;base64,${composition.toString('base64')}`
+      const emojiUuid = crypto.randomUUID()
+      const filePath = `emojis/${emojiUuid}.png`
+
       imageResults.push({
         name: theme.name,
         label: theme.label,
-        image: base64Img
+        image: base64Img,
+        uuid: emojiUuid,
+        filePath: filePath
       })
 
       // ZIP 파일에 개별 이미지 추가
       zip.file(`${theme.name}.png`, composition)
+
+      // 즉시 메모리 해제를 돕기 위해 composition 버퍼 참조를 널링
+      composition = null as any
+    }
+    console.log('[Step 3] 8종 캔버스 합성 완료')
+
+    // emojis 스토리지 버킷이 없으면 백엔드 단에서 자동 Private 생성 (무오류 연동)
+    try {
+      const { data: buckets } = await supabase.storage.listBuckets()
+      const hasBucket = buckets?.some(b => b.name === 'emojis')
+      if (!hasBucket) {
+        console.log("emojis bucket not found. Auto-creating private emojis bucket...")
+        await supabase.storage.createBucket('emojis', {
+          public: false,
+          allowedMimeTypes: ['image/png']
+        })
+      }
+    } catch (e) {
+      console.warn("Storage bucket pre-check failed, proceeding to upload:", e)
     }
 
-    const zipBuffer = await zip.generateAsync({ type: 'nodebuffer' })
-    const zipBase64 = zipBuffer.toString('base64')
+    const uploadedFilePaths: string[] = []
+    const createdUuids: string[] = []
+    const initialPoints = userRecord.points
 
-    // 2. 포인트 원자적 1 차감 및 이력 저장 (트랜잭션 안전 래핑)
-    await runWithSchemaSafety(async () => {
-      // 포인트 차감
-      const { error: updateError } = await supabase
-        .from('web3_users')
-        .update({ points: userRecord.points - 8 })
-        .eq('wallet_address', walletAddress.toLowerCase())
+    try {
+      // Step 4: Supabase 스토리지 업로드
+      console.log('[Step 4] Supabase 스토리지 업로드 시작')
+      for (const item of imageResults) {
+        const base64Clean = item.image.replace(/^data:image\/\w+;base64,/, '')
+        const imgBuffer = Buffer.from(base64Clean, 'base64')
 
-      if (updateError) throw updateError
+        const { error: uploadError } = await supabase.storage
+          .from('emojis')
+          .upload(item.filePath, imgBuffer, {
+            contentType: 'image/png',
+            cacheControl: '31536000',
+            upsert: true
+          })
 
-      // 이력 인서트
-      const { error: insertError } = await supabase
-        .from('point_transactions')
-        .insert({
-          wallet_address: walletAddress.toLowerCase(),
-          amount: -8,
-          transaction_type: 'use',
-          description: '마이펫 실사 스티커 8종 패키지 제작'
-        })
+        if (uploadError) throw uploadError
+        uploadedFilePaths.push(item.filePath)
+        createdUuids.push(item.uuid)
+      }
+      console.log('[Step 4] Supabase 스토리지 업로드 성공')
 
-      if (insertError) throw insertError
-    })
+      // Step 5: 포인트 차감 및 DB 저장
+      console.log('[Step 5] 포인트 차감 및 DB 저장 시작')
 
-    return NextResponse.json({
-      status: 'success',
-      stickers: imageResults,
-      zip: zipBase64,
-      remainingPoints: userRecord.points - 8
-    })
+      let dbInsertSuccess = false
+      let dbPointsDeducted = false
+      let dbTxLogged = false
+
+      try {
+        // 1. emojis 테이블에 8개 이모티콘 일괄 삽입
+        const insertRows = imageResults.map(item => ({
+          uuid: item.uuid,
+          style_type: 'Real', // 실사 이모티콘 스타일로 명시
+          file_path: item.filePath,
+          creator_wallet: walletAddress.toLowerCase(),
+          owner_wallet: walletAddress.toLowerCase(),
+          status: 'completed',
+          is_viewed: true
+        }))
+
+        const { error: dbError } = await supabase
+          .from('emojis')
+          .insert(insertRows)
+
+        if (dbError) throw dbError
+        dbInsertSuccess = true
+
+        // 2. web3_users 테이블 포인트 차감 (8 P 차감)
+        const { error: updateError } = await supabase
+          .from('web3_users')
+          .update({ 
+            points: initialPoints - 8,
+            updated_at: new Date().toISOString()
+          })
+          .eq('wallet_address', walletAddress.toLowerCase())
+
+        if (updateError) throw updateError
+        dbPointsDeducted = true
+
+        // 3. point_transactions 이력 생성
+        const { error: insertError } = await supabase
+          .from('point_transactions')
+          .insert({
+            wallet_address: walletAddress.toLowerCase(),
+            amount: -8,
+            transaction_type: 'use',
+            description: '마이펫 실사 스티커 8종 패키지 제작'
+          })
+
+        if (insertError) throw insertError
+        dbTxLogged = true
+
+        console.log('[Step 5] 포인트 차감 및 DB 저장 완료')
+
+      } catch (dbError: any) {
+        console.error('[DB Transaction Error] DB 연산 실패, 복구(롤백) 프로세스 가동:', dbError.message || dbError)
+        
+        // DB 롤백 실행 (역순으로 안전하게 복구)
+        if (dbInsertSuccess) {
+          console.log('[Rollback] emojis 테이블 레코드 삭제 중...')
+          await supabase
+            .from('emojis')
+            .delete()
+            .in('uuid', createdUuids)
+        }
+        if (dbPointsDeducted) {
+          console.log('[Rollback] web3_users 포인트 복구 중...')
+          await supabase
+            .from('web3_users')
+            .update({ points: initialPoints })
+            .eq('wallet_address', walletAddress.toLowerCase())
+        }
+        if (dbTxLogged) {
+          console.log('[Rollback] point_transactions 내역 삭제 중...')
+          await supabase
+            .from('point_transactions')
+            .delete()
+            .eq('wallet_address', walletAddress.toLowerCase())
+            .eq('amount', -8)
+            .eq('description', '마이펫 실사 스티커 8종 패키지 제작')
+        }
+        
+        throw dbError // 스토리지 삭제 가동을 위해 상위 catch로 전달
+      }
+
+      const zipBuffer = await zip.generateAsync({ type: 'nodebuffer' })
+      const zipBase64 = zipBuffer.toString('base64')
+
+      return NextResponse.json({
+        status: 'success',
+        stickers: imageResults.map(item => ({
+          name: item.name,
+          label: item.label,
+          image: item.image,
+          uuid: item.uuid
+        })),
+        zip: zipBase64,
+        remainingPoints: initialPoints - 8
+      })
+
+    } catch (mainError: any) {
+      console.error('[Generate Engine Failure] 파이프라인 수행 실패, 스토리지 롤백 프로세스 가동:', mainError.message || mainError)
+      
+      // 스토리지 파일 롤백
+      if (uploadedFilePaths.length > 0) {
+        console.log('[Rollback] Supabase 스토리지에 이미 업로드된 파일들 삭제 중:', uploadedFilePaths)
+        try {
+          const { error: removeError } = await supabase.storage
+            .from('emojis')
+            .remove(uploadedFilePaths)
+          
+          if (removeError) {
+            console.error('[Rollback Error] 스토리지 파일 삭제 실패:', removeError)
+          } else {
+            console.log('[Rollback] 스토리지 파일 삭제 성공')
+          }
+        } catch (e) {
+          console.error('[Rollback Exception] 스토리지 파일 삭제 중 예외 발생:', e)
+        }
+      }
+
+      throw mainError // 상위 catch로 에러를 던져 전체 500 응답 발생
+    }
 
   } catch (error: any) {
     console.error('Pet sticker generate API error:', error)

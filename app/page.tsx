@@ -586,24 +586,21 @@ export default function Home() {
   const handlePetUpload = async (file: File) => {
     setIsNoBgLoading(true)
     try {
-      const reader = new FileReader()
-      reader.onload = async (e) => {
-        const base64Image = e.target?.result as string
-        const res = await fetch('/api/remove-bg', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ image: base64Image })
-        })
-        const data = await res.json()
-        if (data.status === 'success') {
-          setNoBgImageUrl(data.image)
-          setUploadedFile(file)
-        } else {
-          alert(`배경 제거 실패: ${data.message || '알 수 없는 오류'}`)
-        }
-        setIsNoBgLoading(false)
+      const formData = new FormData()
+      formData.append('image', file)
+
+      const res = await fetch('/api/remove-bg', {
+        method: 'POST',
+        body: formData
+      })
+      const data = await res.json()
+      if (data.status === 'success') {
+        setNoBgImageUrl(data.image)
+        setUploadedFile(file)
+      } else {
+        alert(`배경 제거 실패: ${data.message || '알 수 없는 오류'}`)
       }
-      reader.readAsDataURL(file)
+      setIsNoBgLoading(false)
     } catch (err: any) {
       console.error(err)
       alert('펫 이미지 업로드 중 에러가 발생했습니다.')
@@ -1071,7 +1068,7 @@ export default function Home() {
                 {isNoBgLoading ? (
                   <div className="flex flex-col items-center gap-3 text-center">
                     <div className="w-10 h-10 rounded-full border-2 border-brand-primary border-t-transparent animate-spin"></div>
-                    <p className="text-xs text-gray-400 mt-1">배경 투명화 가공 중...</p>
+                    <p className="text-xs text-gray-400 mt-1">식빵이가 열심히 사진을 오려내고 있어요 🍞✂️...</p>
                   </div>
                 ) : !previewUrl ? (
                   <div className="flex flex-col items-center gap-3 text-center">
@@ -1185,7 +1182,7 @@ export default function Home() {
               {activeMode === 'pet' && isPetGenerating && (
                 <div className="mt-6 border-t border-gray-100 pt-6 flex flex-col items-center justify-center gap-3">
                   <div className="w-10 h-10 rounded-full border-2 border-brand-primary border-t-transparent animate-spin"></div>
-                  <p className="text-xs font-semibold text-gray-500">실사 스티커 패키지 합성 가공 중...</p>
+                  <p className="text-xs font-semibold text-gray-500">식빵이가 열심히 사진을 오려내고 있어요 🍞✂️...</p>
                 </div>
               )}
 
