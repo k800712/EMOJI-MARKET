@@ -126,9 +126,9 @@ export async function GET(req: NextRequest) {
           .from('web3_users')
           .upsert({
             wallet_address: virtualWallet.toLowerCase(),
-            nickname: nickname,
-            real_name: realName,
-            profile_image_url: profileImageUrl,
+            nickname: nickname || '식빵냥',
+            real_name: realName || nickname || '식빵냥',
+            profile_image_url: profileImageUrl || '/images/default-bread-avatar.png',
             nonce: 'KAKAO_SOCIAL',
             kakao_id: kakaoId,
             status: 'active',
@@ -144,8 +144,21 @@ export async function GET(req: NextRequest) {
         }
       })
     } catch (upsertError: any) {
-      console.error('[Supabase Auth] DB Upsert 트랜잭션 치명적 실패:', upsertError)
-      return NextResponse.redirect(new URL(`/?error=db_upsert_failed&msg=${encodeURIComponent(upsertError.message || '')}`, req.url))
+      console.warn('[Supabase Auth] 1차 DB Upsert 실패 (캐시 락 우회 가동). RPC 함수 rpc_upsert_web3_user 실행...', upsertError.message || upsertError)
+      try {
+        const { data: rpcData, error: rpcError } = await supabase.rpc('rpc_upsert_web3_user', {
+          p_wallet_address: virtualWallet.toLowerCase(),
+          p_kakao_id: kakaoId,
+          p_nickname: nickname || '식빵냥',
+          p_real_name: realName || nickname || '식빵냥',
+          p_profile_image_url: profileImageUrl || '/images/default-bread-avatar.png'
+        })
+        if (rpcError) throw rpcError
+        console.log('[Supabase Auth] RPC를 통한 2차 우회 가입 성공!', rpcData)
+      } catch (rpcCatchError: any) {
+        console.error('[Supabase Auth] RPC를 통한 2차 우회 가입 최종 실패:', rpcCatchError.message || rpcCatchError)
+        return NextResponse.redirect(new URL(`/?error=db_upsert_failed&msg=${encodeURIComponent(rpcCatchError.message || '')}`, req.url))
+      }
     }
 
     if (isNewUser) {

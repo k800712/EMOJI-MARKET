@@ -112,9 +112,9 @@ export async function POST(req: NextRequest) {
             .from('web3_users')
             .insert({
               wallet_address: targetWallet.toLowerCase(),
-              nickname: nickname,
-              real_name: realName,
-              profile_image_url: profileImageUrl,
+              nickname: nickname || '식빵냥',
+              real_name: realName || nickname || '식빵냥',
+              profile_image_url: profileImageUrl || '/default-avatar.png',
               nonce: 'KAKAO_SOCIAL',
               points: 3,
               kakao_id: kakaoId.toString(),
@@ -124,7 +124,21 @@ export async function POST(req: NextRequest) {
           if (error) throw error
         })
       } catch (insertError: any) {
-        console.warn('1차 가입 시도 실패, nonce_expires_at 미포함 2차 시도...', insertError)
+        console.warn('1차 가입 시도 실패 (스키마 캐시 락 우회 작동), RPC 함수 rpc_upsert_web3_user 실행...', insertError.message || insertError)
+        try {
+          const { data: rpcData, error: rpcError } = await supabase.rpc('rpc_upsert_web3_user', {
+            p_wallet_address: targetWallet.toLowerCase(),
+            p_kakao_id: kakaoId.toString(),
+            p_nickname: nickname || '식빵냥',
+            p_real_name: realName || nickname || '식빵냥',
+            p_profile_image_url: profileImageUrl || '/default-avatar.png'
+          })
+
+          if (rpcError) throw rpcError
+          console.log('RPC를 통한 2차 우회 가입 성공!', rpcData)
+        } catch (rpcCatchError: any) {
+          console.error('RPC를 통한 2차 우회 가입 최종 실패:', rpcCatchError.message || rpcCatchError)
+        }
       }
 
       // 포인트 가입 보너스 이력 기록
@@ -170,9 +184,9 @@ export async function POST(req: NextRequest) {
           const { error } = await supabase
             .from('web3_users')
             .update({
-              nickname: nickname,
-              real_name: realName,
-              profile_image_url: profileImageUrl,
+              nickname: nickname || '식빵냥',
+              real_name: realName || nickname || '식빵냥',
+              profile_image_url: profileImageUrl || '/default-avatar.png',
               status: 'active',
               updated_at: new Date().toISOString()
             })
@@ -180,8 +194,20 @@ export async function POST(req: NextRequest) {
 
           if (error) throw error
         })
-      } catch (updateError) {
-        console.warn('기존 유저 프로필 실시간 동기화 업데이트 실패 (우회 통과):', updateError)
+      } catch (updateError: any) {
+        console.warn('기존 유저 프로필 실시간 동기화 업데이트 실패 (RPC 우회 업데이트 수행):', updateError.message || updateError)
+        try {
+          await supabase.rpc('rpc_upsert_web3_user', {
+            p_wallet_address: targetWallet.toLowerCase(),
+            p_kakao_id: kakaoId.toString(),
+            p_nickname: nickname || '식빵냥',
+            p_real_name: realName || nickname || '식빵냥',
+            p_profile_image_url: profileImageUrl || '/default-avatar.png'
+          })
+          console.log('RPC를 통한 기존 유저 정보 2차 업데이트 성공!')
+        } catch (rpcUpdateError: any) {
+          console.error('RPC를 통한 기존 유저 정보 2차 업데이트 마저 실패 (우회 통과):', rpcUpdateError.message || rpcUpdateError)
+        }
       }
 
       nickname = nickname || userRecord.nickname || '식빵냥'

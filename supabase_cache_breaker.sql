@@ -55,3 +55,31 @@ USING (true)
 WITH CHECK (true);
 SELECT public.force_api_schema_reload();
 
+-- 9. Supabase Database RPC 우회 함수 설계 (스키마 캐시 락 우회 가입용)
+CREATE OR REPLACE FUNCTION public.rpc_upsert_web3_user(
+  p_wallet_address TEXT,
+  p_kakao_id TEXT,
+  p_nickname TEXT,
+  p_real_name TEXT,
+  p_profile_image_url TEXT
+)
+RETURNS json AS $$
+DECLARE
+  v_result json;
+BEGIN
+  INSERT INTO public.web3_users (wallet_address, kakao_id, nickname, real_name, profile_image_url, points, updated_at)
+  VALUES (p_wallet_address, p_kakao_id, p_nickname, p_real_name, p_profile_image_url, 3, now())
+  ON CONFLICT (wallet_address) DO UPDATE
+  SET
+    kakao_id = COALESCE(p_kakao_id, public.web3_users.kakao_id),
+    nickname = COALESCE(p_nickname, public.web3_users.nickname),
+    real_name = COALESCE(p_real_name, public.web3_users.real_name),
+    profile_image_url = COALESCE(p_profile_image_url, public.web3_users.profile_image_url),
+    updated_at = now()
+  RETURNING row_to_json(public.web3_users.*) INTO v_result;
+  RETURN v_result;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+
+
