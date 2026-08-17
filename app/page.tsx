@@ -156,9 +156,15 @@ export default function Home() {
   // 실제 카카오 OAuth 2.0 표준 인가 로그인 리다이렉트 실행
   const connectKakaoRealOAuth = () => {
     if (typeof window === 'undefined') return
-    const client_id = 'c1206f4777e1bf356c39a04a37b3f9ff'
-    const redirect_uri = `${window.location.origin}/api/auth/kakao/callback`
-    const kakaoAuthUrl = `https://kauth.kakao.com/oauth/authorize?client_id=${client_id}&redirect_uri=${encodeURIComponent(redirect_uri)}&response_type=code`
+    const client_id = process.env.NEXT_PUBLIC_KAKAO_CLIENT_ID || 'c1206f4777e1bf356c39a04a37b3f9ff'
+    const redirect_uri = process.env.NEXT_PUBLIC_KAKAO_REDIRECT_URI || `${window.location.origin}/api/auth/kakao/callback`
+
+    if (!client_id) {
+      console.error("카카오 클라이언트 ID가 로드되지 않았습니다.")
+      return
+    }
+
+    const kakaoAuthUrl = `https://kauth.kakao.com/oauth/authorize?response_type=code&client_id=${client_id}&redirect_uri=${encodeURIComponent(redirect_uri)}`
     window.location.href = kakaoAuthUrl
   }
 

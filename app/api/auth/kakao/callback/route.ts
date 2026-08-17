@@ -40,9 +40,8 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const client_id = 'c1206f4777e1bf356c39a04a37b3f9ff' 
-    const origin = new URL(req.url).origin
-    const redirect_uri = `${origin}/api/auth/kakao/callback`
+    const client_id = process.env.NEXT_PUBLIC_KAKAO_CLIENT_ID || 'c1206f4777e1bf356c39a04a37b3f9ff' 
+    const redirect_uri = process.env.NEXT_PUBLIC_KAKAO_REDIRECT_URI || `${new URL(req.url).origin}/api/auth/kakao/callback`
 
     console.log(`[Kakao Auth] 토큰 발급 요청 전송 예정. Redirect URI: ${redirect_uri}`)
 
