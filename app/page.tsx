@@ -73,6 +73,15 @@ const KAKAO_SITUATIONS = [
 export default function Home() {
   const [uploadedFile, setUploadedFile] = useState<File | null>(null)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
+
+  // 메모리 누수 방지를 위한 previewUrl Cleanup 훅
+  useEffect(() => {
+    return () => {
+      if (previewUrl && previewUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(previewUrl)
+      }
+    }
+  }, [previewUrl])
   const [selectedStyle, setSelectedStyle] = useState<string | null>(null)
   const [selectedCountry, setSelectedCountry] = useState<string>('KR')
   const [customPrompt, setCustomPrompt] = useState<string>('')
@@ -665,7 +674,8 @@ export default function Home() {
   }
 
   // 마이펫 실사 스티커 8종 세트 최종 제작 핸들러
-  const handleGeneratePetStickers = async () => {
+  const handleGeneratePetStickers = async (e?: React.FormEvent | React.MouseEvent) => {
+    e?.preventDefault()
     if (!walletAddress) {
       alert('🔒 로그인이 완료되면 마이펫 실사 스티커 제작이 가능합니다!')
       setShowLoginModal(true)
@@ -765,7 +775,8 @@ export default function Home() {
     })
   }
 
-  const triggerGenerate = async () => {
+  const triggerGenerate = async (e?: React.FormEvent | React.MouseEvent) => {
+    e?.preventDefault()
     if (!uploadedFile || !selectedStyle) return
 
     setIsGenerating(true)
@@ -1197,7 +1208,8 @@ export default function Home() {
 
                   <button
                     type="button"
-                    onClick={() => {
+                    onClick={(e) => {
+                      e.preventDefault()
                       if (!walletAddress) {
                         setShowLoginModal(true)
                         return
@@ -1207,7 +1219,7 @@ export default function Home() {
                         setShowRechargeModal(true)
                         return
                       }
-                      handleGeneratePetStickers()
+                      handleGeneratePetStickers(e)
                     }}
                     disabled={isPetGenerating || !noBgImageUrl}
                     className={`w-full py-4.5 font-bold rounded-2xl flex items-center justify-center gap-2 transition-all duration-300 text-xs select-none ${
@@ -1396,7 +1408,8 @@ export default function Home() {
 
             {/* Submit Button */}
             <button 
-              onClick={() => {
+              onClick={(e) => {
+                e.preventDefault()
                 if (!walletAddress) {
                   setShowLoginModal(true)
                   return
@@ -1406,7 +1419,7 @@ export default function Home() {
                   setShowRechargeModal(true)
                   return
                 }
-                triggerGenerate()
+                triggerGenerate(e)
               }}
               style={{ display: activeMode === 'illust' ? 'flex' : 'none' }}
               disabled={isGenerating || (walletAddress && !isFormValid)}
