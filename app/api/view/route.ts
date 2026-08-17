@@ -23,6 +23,29 @@ export async function GET(req: NextRequest) {
       return new NextResponse('Emoji not found in DB', { status: 404 })
     }
 
+    // 1.5. 로컬 에셋(temp_...)인 경우 로컬에서 초고속 서빙 (스토리지 404 예방)
+    if (record.file_path.startsWith('temp_')) {
+      const fs = require('fs')
+      const path = require('path')
+      const localFilePath = path.join(process.cwd(), 'public', 'assets', 'custom-emojis', `${record.file_path}.png`)
+      
+      try {
+        if (fs.existsSync(localFilePath)) {
+          const imageBuffer = fs.readFileSync(localFilePath)
+          const responseHeaders = new Headers()
+          responseHeaders.set('Content-Type', 'image/png')
+          responseHeaders.set('Cache-Control', 'public, max-age=31536000, immutable')
+          
+          return new Response(imageBuffer, {
+            status: 200,
+            headers: responseHeaders
+          })
+        }
+      } catch (fsError) {
+        console.error('Local asset read error:', fsError)
+      }
+    }
+
     // 2. Storage에서 60초 임시 Signed URL 생성
     const { data: signedData, error: storageError } = await supabase.storage
       .from('emojis')

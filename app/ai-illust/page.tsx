@@ -1604,7 +1604,9 @@ export default function Home() {
                 id: item.uuid,
                 uuid: item.uuid,
                 style_type: item.style_type,
-                file_path: `/api/view?uuid=${item.uuid}`
+                file_path: item.file_path.startsWith('temp_') 
+                  ? `/assets/custom-emojis/${item.file_path}.png` 
+                  : `/api/view?uuid=${item.uuid}`
               }))} 
               isLoggedIn={!!walletAddress}
             />

@@ -9,6 +9,7 @@ interface Emoji {
   uuid: string
   style_type: string
   created_at: string
+  file_path?: string
 }
 
 interface EmojiLibraryProps {
@@ -57,7 +58,9 @@ export default function EmojiLibrary({
     setCopyingUuid(item.uuid)
 
     // 3. 비동기 이미지 복사 수행
-    const imageUrl = `/api/view?uuid=${item.uuid}`
+    const imageUrl = item.file_path && item.file_path.startsWith('temp_')
+      ? `/assets/custom-emojis/${item.file_path}.png`
+      : `/api/view?uuid=${item.uuid}`
     const success = await copyImageToClipboard(imageUrl)
 
     // 4. 복사 완료 연출 및 토스트 메세지 표출
@@ -170,6 +173,9 @@ export default function EmojiLibrary({
             } else if (item.style_type === 'office') {
               badgeLabel = '직장인'
               badgeColor = 'text-pink-600 bg-pink-50 border-pink-100'
+            } else if (item.style_type === 'PREMIUM_CONCEPT') {
+              badgeLabel = '프리미엄'
+              badgeColor = 'text-amber-600 bg-amber-50 border-amber-100'
             }
 
             return (
@@ -210,7 +216,7 @@ export default function EmojiLibrary({
                     </div>
                   )}
                   <img 
-                    src={`/api/view?uuid=${item.uuid}`} 
+                    src={item.file_path && item.file_path.startsWith('temp_') ? `/assets/custom-emojis/${item.file_path}.png` : `/api/view?uuid=${item.uuid}`} 
                     alt="Sticker"
                     className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                     loading="lazy"
