@@ -642,7 +642,7 @@ export default function Home() {
     try {
       // 업로드 전 이미지 압축 수행 (Vercel 4.5MB 제한 우회)
       console.log('[Image Compressor] 마이펫 이미지 압축 시도 중...')
-      const compressedBlob = await compressImage(file, 1200, 0.75)
+      const compressedBlob = await compressImage(file, 1024, 0.70)
       const compressedFile = new File([compressedBlob], file.name, {
         type: compressedBlob.type || 'image/jpeg',
         lastModified: Date.now()
@@ -676,6 +676,8 @@ export default function Home() {
   // 마이펫 실사 스티커 8종 세트 최종 제작 핸들러
   const handleGeneratePetStickers = async (e?: React.FormEvent | React.MouseEvent) => {
     e?.preventDefault()
+    e?.stopPropagation()
+    if (isPetGenerating) return // 이중 제출 방지 락
     if (!walletAddress) {
       alert('🔒 로그인이 완료되면 마이펫 실사 스티커 제작이 가능합니다!')
       setShowLoginModal(true)
@@ -777,6 +779,8 @@ export default function Home() {
 
   const triggerGenerate = async (e?: React.FormEvent | React.MouseEvent) => {
     e?.preventDefault()
+    e?.stopPropagation()
+    if (isGenerating) return // 이중 제출 방지 락
     if (!uploadedFile || !selectedStyle) return
 
     setIsGenerating(true)
@@ -790,7 +794,7 @@ export default function Home() {
     console.log('[Image Compressor] 일러스트 생성 이미지 압축 시도 중...')
     let finalUploadFile = uploadedFile
     try {
-      const compressedBlob = await compressImage(uploadedFile, 1200, 0.75)
+      const compressedBlob = await compressImage(uploadedFile, 1024, 0.70)
       finalUploadFile = new File([compressedBlob], uploadedFile.name, {
         type: compressedBlob.type || 'image/jpeg',
         lastModified: Date.now()
@@ -1210,6 +1214,7 @@ export default function Home() {
                     type="button"
                     onClick={(e) => {
                       e.preventDefault()
+                      e.stopPropagation()
                       if (!walletAddress) {
                         setShowLoginModal(true)
                         return
@@ -1410,6 +1415,7 @@ export default function Home() {
             <button 
               onClick={(e) => {
                 e.preventDefault()
+                e.stopPropagation()
                 if (!walletAddress) {
                   setShowLoginModal(true)
                   return
