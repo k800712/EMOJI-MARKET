@@ -12,6 +12,11 @@ export function createClient() {
       db: {
         schema: 'public'
       },
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: false
+      },
       global: {
         headers: {
           'Cache-Control': 'no-cache, no-store, must-revalidate',

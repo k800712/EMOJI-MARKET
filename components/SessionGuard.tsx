@@ -19,6 +19,12 @@ export default function SessionGuard({ onLogout }: SessionGuardProps) {
           console.log('[SessionGuard] 창 이탈 감지. 2초 후 자동 로그아웃을 예약합니다.')
           logoutTimerRef.current = setTimeout(async () => {
             if (document.visibilityState === 'hidden') {
+              const isUploadingPin = localStorage.getItem('emoji_market_upload_lock') === 'true'
+              if (isUploadingPin) {
+                console.log("🛡️ [SessionGuard] 모바일 이미지 업로드 중 포커스 복귀 지연 감지. 로그아웃 요청을 가드하고 세션을 유지합니다.")
+                return
+              }
+
               isTriggeredRef.current = true
               console.log('[SessionGuard] 2초 이상 이탈 확인. 자동 로그아웃을 실행합니다.')
               
@@ -44,6 +50,10 @@ export default function SessionGuard({ onLogout }: SessionGuardProps) {
           clearTimeout(logoutTimerRef.current)
           logoutTimerRef.current = null
         }
+        // 포커스 복귀 후 1초 뒤에 락을 자연스럽게 해제하여 다음번 동작에 지장이 없도록 동기화합니다.
+        setTimeout(() => {
+          localStorage.removeItem('emoji_market_upload_lock')
+        }, 1000)
       }
     }
 

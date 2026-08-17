@@ -638,9 +638,26 @@ export default function Home() {
     }
   }
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
-      handleFile(e.target.files[0])
+      // 파일 탐색 완료 즉시 락 활성화
+      localStorage.setItem('emoji_market_upload_lock', 'true')
+
+      const file = e.target.files[0]
+      // 모바일 OOM 방지를 위한 800px 극단적 선제 압축 적용
+      console.log('[Image Compressor] 모바일 OOM 방지 극단적 선제 압축 기동 (800px, 70% quality)...')
+      try {
+        const compressedBlob = await compressImage(file, 800, 0.70)
+        const compressedFile = new File([compressedBlob], file.name, {
+          type: compressedBlob.type || 'image/jpeg',
+          lastModified: Date.now()
+        })
+        console.log(`[Image Compressor] 선제 압축 완료: ${file.size} -> ${compressedFile.size} bytes`)
+        handleFile(compressedFile)
+      } catch (compressErr) {
+        console.error('[Image Compressor] 선제 압축 에러, 원본 폴백:', compressErr)
+        handleFile(file)
+      }
     }
   }
 
@@ -678,11 +695,13 @@ export default function Home() {
         setPreviewUrl(null)
       }
       setIsNoBgLoading(false)
+      localStorage.removeItem('emoji_market_upload_lock') // 이미지 업로드 완료 락 해제
     } catch (err: any) {
       console.error(err)
       alert('펫 이미지 업로드 중 에러가 발생했습니다.')
       setPreviewUrl(null)
       setIsNoBgLoading(false)
+      localStorage.removeItem('emoji_market_upload_lock') // 에러 발생 시 락 해제
     }
   }
 
@@ -794,6 +813,7 @@ export default function Home() {
     e?.preventDefault()
     e?.stopPropagation()
     if (isGenerating) return // 이중 제출 방지 락
+    localStorage.setItem('emoji_market_upload_lock', 'true') // 생성 트랜잭션 락 활성화
     if (!uploadedFile || !selectedStyle) return
 
     setIsGenerating(true)
@@ -876,6 +896,8 @@ export default function Home() {
     // 지정한 동시성 개수만큼 워커 구동 (타임아웃 우회)
     const workers = Array.from({ length: concurrency }, () => runWorker())
     await Promise.all(workers)
+
+    localStorage.removeItem('emoji_market_upload_lock') // 모든 빌드 워커 완료 후 락 해제
 
     if (notificationGranted) {
       new Notification('이모지 마켓', {
@@ -1149,6 +1171,7 @@ export default function Home() {
                 onDrop={handleDrop}
                 onClick={() => {
                   if (!isNoBgLoading && !isPetGenerating) {
+                    localStorage.setItem('emoji_market_upload_lock', 'true')
                     fileInputRef.current?.click()
                   }
                 }}
