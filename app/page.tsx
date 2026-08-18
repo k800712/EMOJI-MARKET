@@ -1,4 +1,4 @@
-'use client'
+"use client";
 
 import React, { useState, useEffect, useRef, useMemo } from 'react'
 import { 
@@ -289,7 +289,7 @@ export default function Home() {
 
   // 비용 무료 웹 푸시 알림 신청 및 구독 갱신 연동 함수
   const subscribeToWebPush = async (addr: string) => {
-    if (typeof window === 'undefined' || !('serviceWorker' in navigator) || !('PushManager' in window)) {
+    if (typeof window === 'undefined' || typeof navigator === 'undefined' || !('serviceWorker' in navigator) || !('PushManager' in window)) {
       console.warn('[Web Push] 이 브라우저는 웹 푸시 알림을 지원하지 않습니다.')
       return
     }
