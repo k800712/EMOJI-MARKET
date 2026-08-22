@@ -1,6 +1,7 @@
 'use client'
 
-import React, { createContext, useContext, useEffect, useState } from 'react'
+import React, { createContext, useContext, useEffect, useState, useRef } from 'react'
+import { useRouter } from 'next/navigation'
 import { createClient } from '@/utils/supabase/client'
 
 interface AuthContextType {
@@ -15,13 +16,27 @@ export function useAuth() {
 
 export default function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isVerifying, setIsVerifying] = useState(true)
+  const isChecked = useRef(false)
+  const router = useRouter()
 
   useEffect(() => {
-    const verifySession = async () => {
-      if (typeof window === 'undefined') {
-        setIsVerifying(false)
-        return
-      }
+    if (typeof window === 'undefined') {
+      setIsVerifying(false)
+      return
+    }
+
+    const supabase = createClient()
+
+    // 창 닫기 감지 핸들러
+    const recordWindowCloseTime = () => {
+      localStorage.setItem('window_closed_at', Date.now().toString())
+    }
+
+    // 10초 유예 로그아웃 판별 함수
+    const verifyGracePeriod = async () => {
+      // 1. 중복 실행 방지용 플래그 체크 (무한 루프 차단)
+      if (isChecked.current) return
+      isChecked.current = true
 
       try {
         const windowClosedAt = localStorage.getItem('window_closed_at')
@@ -33,8 +48,10 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
           if (!isNaN(closedTime) && now - closedTime > 10000) {
             console.log('🛡️ [AuthProvider] 브라우저 종료 후 10초 경과 감지. 강제 로그아웃을 처리합니다.')
             
-            // 1. Supabase Auth 로그아웃
-            const supabase = createClient()
+            // 의도적인 로그아웃 시 리스너를 즉시 해제하여 루프 차단
+            window.removeEventListener('beforeunload', recordWindowCloseTime)
+            
+            // Supabase Auth 로그아웃
             if (supabase) {
               try {
                 await supabase.auth.signOut()
@@ -43,13 +60,14 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
               }
             }
 
-            // 2. 로컬 스토리지 정리
+            // 로컬 스토리지 정리
             localStorage.removeItem('wallet_session')
             localStorage.removeItem('kakao_nickname')
             localStorage.removeItem('kakao_realname')
             localStorage.removeItem('kakao_profile_img')
+            localStorage.removeItem('window_closed_at')
 
-            // 3. API 세션(쿠키) 제거
+            // API 세션(쿠키) 제거
             try {
               await fetch('/api/auth/logout', {
                 method: 'POST',
@@ -59,8 +77,14 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
               console.error('Logout API error:', err)
             }
 
-            // 세션 리셋을 위한 새로고침
-            window.location.reload()
+            // 쿠키 강제 초기화
+            document.cookie = `sb-access-token=; path=/; max-age=0; SameSite=Lax; Secure`
+            document.cookie = `sb-refresh-token=; path=/; max-age=0; SameSite=Lax; Secure`
+            document.cookie = `wallet_address=; path=/; max-age=0; SameSite=Lax; Secure`
+
+            // 메인 페이지 이동 및 상태 동기화 리프레시
+            router.push('/')
+            router.refresh()
             return
           }
         }
@@ -68,32 +92,66 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
         console.error('[AuthProvider] 세션 검증 도중 오류 발생:', e)
       } finally {
         // 판별 후 다음 사이클을 위해 정리 및 완료 처리
-        if (typeof window !== 'undefined') {
-          localStorage.removeItem('window_closed_at')
-        }
+        localStorage.removeItem('window_closed_at')
         setIsVerifying(false)
       }
     }
 
-    verifySession()
+    // 최초 검증 실행
+    verifyGracePeriod()
 
-    // beforeunload 이벤트 핸들러 장착
-    const handleBeforeUnload = () => {
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('window_closed_at', Date.now().toString())
-      }
-    }
+    // beforeunload 이벤트 핸들러 등록
+    window.addEventListener('beforeunload', recordWindowCloseTime)
 
-    if (typeof window !== 'undefined') {
-      window.addEventListener('beforeunload', handleBeforeUnload)
+    // 2. Supabase onAuthStateChange 리스너를 활용한 세션/쿠키 동기화 보완
+    let authListener: any = null
+    if (supabase) {
+      const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+        console.log(`🔐 [AuthProvider] Auth event: ${event}`)
+
+        if (event === 'SIGNED_IN' && session) {
+          // access_token, refresh_token 쿠키 굽기 (미들웨어 동기화용)
+          const maxAge = session.expires_in ?? 3600
+          document.cookie = `sb-access-token=${session.access_token}; path=/; max-age=${maxAge}; SameSite=Lax; Secure`
+          document.cookie = `sb-refresh-token=${session.refresh_token}; path=/; max-age=${maxAge}; SameSite=Lax; Secure`
+
+          // 지갑 로그인 주소 쿠키와 동기화
+          if (session.user) {
+            const userWallet = session.user.user_metadata?.wallet_address || session.user.email?.split('@')[0]
+            if (userWallet) {
+              document.cookie = `wallet_address=${userWallet.toLowerCase()}; path=/; max-age=${maxAge}; SameSite=Lax; Secure`
+              localStorage.setItem('wallet_session', userWallet.toLowerCase())
+            }
+          }
+          router.refresh()
+        } else if (event === 'SIGNED_OUT') {
+          // 세션 아웃 시 쿠키 클리어
+          document.cookie = `sb-access-token=; path=/; max-age=0; SameSite=Lax; Secure`
+          document.cookie = `sb-refresh-token=; path=/; max-age=0; SameSite=Lax; Secure`
+          document.cookie = `wallet_address=; path=/; max-age=0; SameSite=Lax; Secure`
+          
+          localStorage.removeItem('wallet_session')
+          localStorage.removeItem('kakao_nickname')
+          localStorage.removeItem('kakao_realname')
+          localStorage.removeItem('kakao_profile_img')
+          
+          router.refresh()
+        } else if (event === 'TOKEN_REFRESHED' && session) {
+          const maxAge = session.expires_in ?? 3600
+          document.cookie = `sb-access-token=${session.access_token}; path=/; max-age=${maxAge}; SameSite=Lax; Secure`
+          document.cookie = `sb-refresh-token=${session.refresh_token}; path=/; max-age=${maxAge}; SameSite=Lax; Secure`
+        }
+      })
+      authListener = subscription
     }
 
     return () => {
-      if (typeof window !== 'undefined') {
-        window.removeEventListener('beforeunload', handleBeforeUnload)
+      window.removeEventListener('beforeunload', recordWindowCloseTime)
+      if (authListener) {
+        authListener.unsubscribe()
       }
     }
-  }, [])
+  }, [router])
 
   if (isVerifying) {
     return (
