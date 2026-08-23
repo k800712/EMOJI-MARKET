@@ -27,7 +27,7 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
 
     const supabase = createClient()
 
-    // 창 닫기 감지 핸들러
+    // 창 닫기 시 정확한 타임스탬프를 기록하는 핸들러
     const recordWindowCloseTime = () => {
       localStorage.setItem('window_closed_at', Date.now().toString())
     }
@@ -48,7 +48,7 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
           if (!isNaN(closedTime) && now - closedTime > 10000) {
             console.log('🛡️ [AuthProvider] 브라우저 종료 후 10초 경과 감지. 강제 로그아웃을 처리합니다.')
             
-            // 의도적인 로그아웃 시 리스너를 즉시 해제하여 루프 차단
+            // 의도적인 로그아웃 과정에서 window 닫기 이벤트가 트리거되지 않도록 리스너 사전 제거
             window.removeEventListener('beforeunload', recordWindowCloseTime)
             
             // Supabase Auth 로그아웃
@@ -82,17 +82,16 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
             document.cookie = `sb-refresh-token=; path=/; max-age=0; SameSite=Lax; Secure`
             document.cookie = `wallet_address=; path=/; max-age=0; SameSite=Lax; Secure`
 
-            // 메인 페이지 이동 및 상태 동기화 리프레시
-            router.push('/')
-            router.refresh()
+            router.push('/login')
             return
+          } else {
+            // 10초 이내 단순 새로고침인 경우 기록 청소 후 세션 유지
+            localStorage.removeItem('window_closed_at')
           }
         }
       } catch (e) {
         console.error('[AuthProvider] 세션 검증 도중 오류 발생:', e)
       } finally {
-        // 판별 후 다음 사이클을 위해 정리 및 완료 처리
-        localStorage.removeItem('window_closed_at')
         setIsVerifying(false)
       }
     }
@@ -100,16 +99,28 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
     // 최초 검증 실행
     verifyGracePeriod()
 
-    // beforeunload 이벤트 핸들러 등록
+    // 브라우저가 꺼지거나 새로고침 될 때 이벤트 리스너 등록
     window.addEventListener('beforeunload', recordWindowCloseTime)
 
-    // 2. Supabase onAuthStateChange 리스너를 활용한 세션/쿠키 동기화 보완
+    // 2. Supabase 인증 상태 변경 리스너
     let authListener: any = null
     if (supabase) {
       const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
         console.log(`🔐 [AuthProvider] Auth event: ${event}`)
 
-        if (event === 'SIGNED_IN' && session) {
+        if (event === 'SIGNED_OUT') {
+          // 세션 아웃 시 쿠키 클리어
+          document.cookie = `sb-access-token=; path=/; max-age=0; SameSite=Lax; Secure`
+          document.cookie = `sb-refresh-token=; path=/; max-age=0; SameSite=Lax; Secure`
+          document.cookie = `wallet_address=; path=/; max-age=0; SameSite=Lax; Secure`
+          
+          localStorage.removeItem('wallet_session')
+          localStorage.removeItem('kakao_nickname')
+          localStorage.removeItem('kakao_realname')
+          localStorage.removeItem('kakao_profile_img')
+          
+          router.push('/login')
+        } else if (event === 'SIGNED_IN' && session) {
           // access_token, refresh_token 쿠키 굽기 (미들웨어 동기화용)
           const maxAge = session.expires_in ?? 3600
           document.cookie = `sb-access-token=${session.access_token}; path=/; max-age=${maxAge}; SameSite=Lax; Secure`
@@ -123,19 +134,7 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
               localStorage.setItem('wallet_session', userWallet.toLowerCase())
             }
           }
-          router.refresh()
-        } else if (event === 'SIGNED_OUT') {
-          // 세션 아웃 시 쿠키 클리어
-          document.cookie = `sb-access-token=; path=/; max-age=0; SameSite=Lax; Secure`
-          document.cookie = `sb-refresh-token=; path=/; max-age=0; SameSite=Lax; Secure`
-          document.cookie = `wallet_address=; path=/; max-age=0; SameSite=Lax; Secure`
-          
-          localStorage.removeItem('wallet_session')
-          localStorage.removeItem('kakao_nickname')
-          localStorage.removeItem('kakao_realname')
-          localStorage.removeItem('kakao_profile_img')
-          
-          router.refresh()
+          router.push('/pet-sticker')
         } else if (event === 'TOKEN_REFRESHED' && session) {
           const maxAge = session.expires_in ?? 3600
           document.cookie = `sb-access-token=${session.access_token}; path=/; max-age=${maxAge}; SameSite=Lax; Secure`
