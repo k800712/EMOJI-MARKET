@@ -143,18 +143,42 @@ export default function Home() {
   const [petStickers, setPetStickers] = useState<{name: string, label: string, image: string}[]>([])
   const [petStickerZip, setPetStickerZip] = useState<string>('')
   const [isPetGenerating, setIsPetGenerating] = useState<boolean>(false)
-  const [selectedEmotions, setSelectedEmotions] = useState<string[]>(['Happy', 'Sad', 'Angry', 'Wow', 'Playful', 'Tired', 'Love', 'Proud'])
-  const handleToggleEmotion = useCallback((emotion: string) => {
-    console.log("[DEBUG] Clicked Emotion:", emotion);
+  const [selectedEmotions, setSelectedEmotions] = useState<string[]>([])
+  const isInitializedRef = useRef(false)
+
+  // [가드 1] 이미지 업로드 성공 시(noBgImageUrl 수립 시)에만 "단 1회" 8종 전체 선택 기본 세팅
+  useEffect(() => {
+    if (noBgImageUrl && !isInitializedRef.current) {
+      setSelectedEmotions(['Happy', 'Sad', 'Angry', 'Wow', 'Playful', 'Tired', 'Love', 'Proud'])
+      isInitializedRef.current = true
+      console.log("[DEBUG] 8종 기본 감정 All-On 초기 세팅 완료 (noBgImageUrl 준비완료)")
+    }
+
+    if (!noBgImageUrl) {
+      setSelectedEmotions([])
+      isInitializedRef.current = false
+    }
+  }, [noBgImageUrl])
+
+  // [가드 2] 안전한 함수형 상태 업데이트 및 전파 제어가 장착된 토글 핸들러
+  const handleToggleEmotion = useCallback((e: React.MouseEvent, emotion: string) => {
+    e.preventDefault()
+    e.stopPropagation()
+    console.log(`[DEBUG] Click Event Triggered for: ${emotion}`)
+
     setSelectedEmotions((prev) => {
-      if (prev.includes(emotion)) {
-        return prev.filter((e) => e !== emotion);
+      const isExist = prev.includes(emotion)
+      let nextState: string[]
+      if (isExist) {
+        nextState = prev.filter((item) => item !== emotion)
       } else {
-        if (prev.length >= 8) return prev;
-        return [...prev, emotion];
+        if (prev.length >= 8) return prev
+        nextState = [...prev, emotion]
       }
-    });
-  }, []);
+      console.log("[DEBUG] 변경 후 감정 배열:", nextState)
+      return nextState
+    })
+  }, [])
   const [isNoBgLoading, setIsNoBgLoading] = useState<boolean>(false)
   const [noBgImageUrl, setNoBgImageUrl] = useState<string>('')
   const [tosChecked, setTosChecked] = useState<boolean>(false)
@@ -705,7 +729,6 @@ export default function Home() {
     // 업로드 즉시 브라우저 로컬 미리보기(Preview) URL 생성 및 설정
     const objectUrl = URL.createObjectURL(file)
     setPreviewUrl(objectUrl)
-    setSelectedEmotions(['Happy', 'Sad', 'Angry', 'Wow', 'Playful', 'Tired', 'Love', 'Proud'])
 
     try {
       const formData = new FormData()
@@ -1365,8 +1388,8 @@ export default function Home() {
                           <button
                             key={theme.key}
                             type="button"
-                            onClick={() => handleToggleEmotion(theme.key)}
-                            className={`border rounded-xl p-2.5 text-center flex flex-col justify-center items-center gap-1 shadow-sm transition-all duration-200 select-none cursor-pointer pointer-events-auto ${
+                            onClick={(e) => handleToggleEmotion(e, theme.key)}
+                            className={`border rounded-xl p-2.5 text-center flex flex-col justify-center items-center gap-1 shadow-sm transition-all duration-200 select-none cursor-pointer pointer-events-auto relative z-50 ${
                               isActive
                                 ? 'bg-brand-primary/10 border-brand-primary text-brand-primary font-black scale-[1.03] shadow-md shadow-brand-primary/5'
                                 : 'bg-gray-50 border-gray-100 text-gray-400 font-medium opacity-70 hover:opacity-100 hover:bg-gray-100/50'
