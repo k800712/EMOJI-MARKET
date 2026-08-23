@@ -27,8 +27,16 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
 
     const supabase = createClient()
 
+    // 💡 [디버깅 로그] Is Running Verification Flag 출력
+    console.log("[Auth DEBUG] Is Running Verification Flag:", isChecked.current);
+
     // 창 닫기 시 정확한 타임스탬프를 기록하는 핸들러
     const recordWindowCloseTime = () => {
+      // 카카오 로그인 리다이렉트나 의도적인 로그아웃/로그인 네비게이션 시에는 기록하지 않고 우회 (루프 원천 차단)
+      if (localStorage.getItem('auth_navigating') === 'true') {
+        console.log('🛡️ [AuthProvider] auth_navigating 감지: beforeunload 시간 저장 우회');
+        return;
+      }
       localStorage.setItem('window_closed_at', Date.now().toString())
     }
 
@@ -39,7 +47,13 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
       isChecked.current = true
 
       try {
+        // 복귀 마운트 시 네비게이션 플래그 초기화
+        localStorage.removeItem('auth_navigating')
+
         const windowClosedAt = localStorage.getItem('window_closed_at')
+        // 💡 [디버깅 로그] Closed At 타임스탬프 출력
+        console.log("[Auth DEBUG] Closed At (LocalStorage):", windowClosedAt);
+
         if (windowClosedAt) {
           const closedTime = parseInt(windowClosedAt, 10)
           const now = Date.now()
@@ -106,7 +120,8 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
     let authListener: any = null
     if (supabase) {
       const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-        console.log(`🔐 [AuthProvider] Auth event: ${event}`)
+        // 💡 [디버깅 로그] Supabase Auth Event 출력
+        console.log("[Auth DEBUG] Current Event:", event);
 
         if (event === 'SIGNED_OUT') {
           // 세션 아웃 시 쿠키 클리어

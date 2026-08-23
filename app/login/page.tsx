@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/utils/supabase/client'
-import { Wallet, MessageCircle, ShieldAlert, Cpu, CheckCircle } from 'lucide-react'
+import { Wallet, MessageCircle, ShieldAlert, Cpu } from 'lucide-react'
 
 export default function LoginPage() {
   const router = useRouter()
@@ -27,6 +27,10 @@ export default function LoginPage() {
       alert('필수 이용약관 및 개인정보 처리방침에 동의해 주세요.')
       return
     }
+    
+    // 💡 [이탈 가드] 로그인 네비게이션이 시작되었음을 설정하여 beforeunload 타임스탬프 기록 우회
+    localStorage.setItem('auth_navigating', 'true')
+
     const client_id = process.env.NEXT_PUBLIC_KAKAO_CLIENT_ID || 'c1206f4777e1bf356c39a04a37b3f9ff'
     const redirect_uri = process.env.NEXT_PUBLIC_KAKAO_REDIRECT_URI || `${window.location.origin}/api/auth/kakao/callback`
 
@@ -45,7 +49,10 @@ export default function LoginPage() {
       return
     }
 
+    // 💡 [이탈 가드] 로그인 네비게이션이 시작되었음을 설정
+    localStorage.setItem('auth_navigating', 'true')
     setIsConnecting(true)
+
     try {
       const accounts = await (window as any).ethereum.request({ method: 'eth_requestAccounts' })
       const address = accounts[0]
@@ -94,18 +101,22 @@ export default function LoginPage() {
               password: `DummyPass_${address}`
             })
           } catch (e) {
-            // 이모지마켓 특성상 DB에서 wallet 세션 검증이 메인이므로 패스 가능
+            // DB 검증이 메인이므로 에러 무시
           }
         }
 
         router.push('/pet-sticker')
       } else {
         alert(`로그인 실패: ${loginData.message}`)
+        // 실패 시 가드 해제
+        localStorage.removeItem('auth_navigating')
       }
 
     } catch (error: any) {
       console.error('Wallet connect error:', error)
       alert(error.message || '지갑 서명 검증 도중 에러가 발생했습니다.')
+      // 에러 발생 시 가드 해제
+      localStorage.removeItem('auth_navigating')
     } finally {
       setIsConnecting(false)
     }
@@ -120,7 +131,7 @@ export default function LoginPage() {
 
       {/* 로그인 메인 컨테이너 */}
       <div className="w-full max-w-md bg-slate-900/60 border border-slate-800/80 backdrop-blur-2xl rounded-[32px] p-8 shadow-2xl relative overflow-hidden">
-        {/* 상단 무지개 그라디언트 라인 */}
+        {/* 상단 그라디언트 라인 */}
         <div className="absolute top-0 left-0 right-0 h-[3px] bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500"></div>
 
         {/* 상단 로고 데코레이션 */}
