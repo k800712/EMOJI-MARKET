@@ -124,6 +124,15 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
         console.log("[Auth DEBUG] Current Event:", event);
 
         if (event === 'SIGNED_OUT') {
+          // 💡 카카오 계정 로그인(가상 지갑 세션)이 로컬스토리지나 쿠키에 살아있다면 강제 로그아웃 리다이렉트 생략
+          const hasActiveKakaoSession = typeof window !== 'undefined' && 
+            (!!localStorage.getItem('wallet_session') || document.cookie.includes('wallet_address='));
+          
+          if (hasActiveKakaoSession) {
+            console.log('🛡️ [AuthProvider] Supabase SIGNED_OUT 감지되었으나, 카카오 로그인 세션이 활성화되어 있어 로그아웃을 바이패스합니다.');
+            return;
+          }
+
           // 세션 아웃 시 쿠키 클리어
           document.cookie = `sb-access-token=; path=/; max-age=0; SameSite=Lax; Secure`
           document.cookie = `sb-refresh-token=; path=/; max-age=0; SameSite=Lax; Secure`
