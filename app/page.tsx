@@ -1,6 +1,17 @@
 "use client";
 
-import React, { useState, useEffect, useRef, useMemo } from 'react'
+const EMOTION_LIST = [
+  { key: 'Happy', label: '😊 행복', desc: '감사합니다' },
+  { key: 'Sad', label: '😢 슬픔', desc: '힝ㅠㅠㅠㅠ' },
+  { key: 'Angry', label: '😡 분노', desc: '크앙!' },
+  { key: 'Wow', label: '😲 깜짝', desc: '우와!' },
+  { key: 'Playful', label: '😜 장난', desc: '화이팅!' },
+  { key: 'Tired', label: '😴 피곤', desc: '쳇!' },
+  { key: 'Love', label: '😍 사랑', desc: '네!' },
+  { key: 'Proud', label: '😎 든든', desc: '반짝!' }
+]
+
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { 
   Smile, 
   Wand2, 
@@ -132,6 +143,47 @@ export default function Home() {
   const [petStickers, setPetStickers] = useState<{name: string, label: string, image: string}[]>([])
   const [petStickerZip, setPetStickerZip] = useState<string>('')
   const [isPetGenerating, setIsPetGenerating] = useState<boolean>(false)
+  const [selectedEmotions, setSelectedEmotions] = useState<string[]>([])
+  const lastInitializedImageRef = useRef<string | null>(null)
+
+  // [가드 1] 이미지 업로드 성공 시(새로운 이미지 수립 시)에만 8종 전체 선택 기본 세팅 (무한 리셋 차단)
+  useEffect(() => {
+    if (uploadedFile) {
+      const currentKey = `${uploadedFile.name}_${uploadedFile.size}`
+      
+      // 동일한 이미지에 대해서는 초기화 바이패스 (Stale Loop 차단)
+      if (lastInitializedImageRef.current === currentKey) {
+        return
+      }
+
+      setSelectedEmotions(['Happy', 'Sad', 'Angry', 'Wow', 'Playful', 'Tired', 'Love', 'Proud'])
+      lastInitializedImageRef.current = currentKey
+      console.log(`[DEBUG] 8종 기본 감정 All-On 초기 세팅 완료 - 이미지: ${currentKey}`)
+    } else {
+      setSelectedEmotions([])
+      lastInitializedImageRef.current = null
+    }
+  }, [uploadedFile])
+
+  // [가드 2] 안전한 함수형 상태 업데이트 및 전파 제어가 장착된 토글 핸들러
+  const handleToggleEmotion = useCallback((e: React.MouseEvent, emotion: string) => {
+    e.preventDefault()
+    e.stopPropagation()
+    console.log(`[DEBUG] Click Event Triggered for: ${emotion}`)
+
+    setSelectedEmotions((prev) => {
+      const isExist = prev.includes(emotion)
+      let nextState: string[]
+      if (isExist) {
+        nextState = prev.filter((item) => item !== emotion)
+      } else {
+        if (prev.length >= 8) return prev
+        nextState = [...prev, emotion]
+      }
+      console.log("[DEBUG] 변경 후 감정 배열:", nextState)
+      return nextState
+    })
+  }, [])
   const [isNoBgLoading, setIsNoBgLoading] = useState<boolean>(false)
   const [noBgImageUrl, setNoBgImageUrl] = useState<string>('')
   const [tosChecked, setTosChecked] = useState<boolean>(false)
@@ -720,12 +772,16 @@ export default function Home() {
       setShowLoginModal(true)
       return
     }
-    if (!noBgImageUrl) {
-      alert('🐶 반려동물 사진을 먼저 업로드해 주세요.')
+    if (!selectedStyle) {
+      alert('🎨 제작할 프리미엄 스타일을 선택해 주세요.')
       return
     }
-    if (points < 8) {
-      alert('⚠️ 보유 포인트가 부족합니다. 스티커를 제작하려면 최소 8 P가 필요합니다.')
+    if (selectedEmotions.length === 0) {
+      alert('⚠️ 제작할 감정 스티커를 최소 1개 이상 선택해 주세요.')
+      return
+    }
+    if (points < selectedEmotions.length) {
+      alert(`⚠️ 보유 포인트가 부족합니다. 스티커를 제작하려면 최소 ${selectedEmotions.length} P가 필요합니다.`)
       return
     }
 
@@ -736,7 +792,9 @@ export default function Home() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           image: noBgImageUrl,
-          walletAddress
+          walletAddress,
+          style: selectedStyle,
+          emotions: selectedEmotions
         })
       })
       const data = await response.json()
@@ -1238,24 +1296,27 @@ export default function Home() {
                   <div>
                     <h3 className="text-xs font-extrabold text-gray-500 mb-2.5 flex items-center gap-1.5">
                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                      아래 8종의 감정 스티커 세트가 함께 제작됩니다! (1 P 소모)
+                      제작할 감정 스티커를 선택해 주세요! (1개당 1 P 소모)
                     </h3>
                     <div className="grid grid-cols-4 gap-2">
-                      {[
-                        { label: '💖 감사', desc: '감사합니다' },
-                        { label: '🔥 화이팅', desc: '화이팅!' },
-                        { label: '💡 반짝', desc: '반짝!' },
-                        { label: '🦖 크앙', desc: '크앙!' },
-                        { label: '💢 쳇', desc: '쳇!' },
-                        { label: '🌟 우와', desc: '우와!' },
-                        { label: '😭 힝', desc: '힝ㅠㅠㅠㅠ' },
-                        { label: '👍 네', desc: '네!' }
-                      ].map((theme, i) => (
-                        <div key={i} className="bg-gray-50 border border-gray-100 rounded-xl p-2.5 text-center flex flex-col justify-center items-center gap-1 shadow-sm">
-                          <span className="text-[10px] font-black text-gray-700">{theme.label}</span>
-                          <span className="text-[9px] font-semibold text-gray-400 font-mono">"{theme.desc}"</span>
-                        </div>
-                      ))}
+                      {EMOTION_LIST.map((theme) => {
+                        const isActive = selectedEmotions.includes(theme.key)
+                        return (
+                          <button
+                            key={theme.key}
+                            type="button"
+                            onClick={(e) => handleToggleEmotion(e, theme.key)}
+                            className={`border rounded-xl p-2.5 text-center flex flex-col justify-center items-center gap-1 shadow-sm transition-all duration-200 select-none cursor-pointer pointer-events-auto relative z-50 ${
+                              isActive
+                                ? 'bg-brand-primary/10 border-brand-primary text-brand-primary font-black scale-[1.03] shadow-md shadow-brand-primary/5'
+                                : 'bg-gray-50 border-gray-100 text-gray-400 font-medium opacity-70 hover:opacity-100 hover:bg-gray-100/50'
+                            }`}
+                          >
+                            <span className={`text-[10px] ${isActive ? 'text-brand-primary' : 'text-gray-500'}`}>{theme.label}</span>
+                            <span className={`text-[9px] font-mono ${isActive ? 'text-brand-primary/80 font-bold' : 'text-gray-400'}`}>"{theme.desc}"</span>
+                          </button>
+                        )
+                      })}
                     </div>
                   </div>
 
@@ -1268,20 +1329,24 @@ export default function Home() {
                         setShowLoginModal(true)
                         return
                       }
-                      if (points < 8) {
+                      if (selectedEmotions.length === 0) {
+                        alert('⚠️ 제작할 감정 스티커를 최소 1개 이상 선택해 주세요.')
+                        return
+                      }
+                      if (points < selectedEmotions.length) {
                         setRechargeStep('plan')
                         setShowRechargeModal(true)
                         return
                       }
                       handleGeneratePetStickers(e)
                     }}
-                    disabled={isPetGenerating || !noBgImageUrl}
+                    disabled={isPetGenerating || !noBgImageUrl || selectedEmotions.length === 0}
                     className={`w-full py-4.5 font-bold rounded-2xl flex items-center justify-center gap-2 transition-all duration-300 text-xs select-none ${
-                      isPetGenerating || !noBgImageUrl
+                      isPetGenerating || !noBgImageUrl || selectedEmotions.length === 0
                         ? 'bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200/50'
                         : !walletAddress
                           ? 'bg-[#FEE500] hover:bg-[#F0D200] text-[#191919] font-black active:scale-[0.98] shadow-lg shadow-yellow-500/10 cursor-pointer'
-                          : points < 8
+                          : points < selectedEmotions.length
                             ? 'bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white cursor-pointer active:scale-[0.98] shadow-lg shadow-orange-500/20'
                             : 'bg-gradient-to-r from-brand-primary to-brand-secondary hover:from-blue-600 hover:to-indigo-600 text-white cursor-pointer active:scale-[0.98] shadow-lg shadow-blue-500/25'
                     }`}
@@ -1298,15 +1363,19 @@ export default function Home() {
                             <span className="text-sm">🔑</span>
                             3초 만에 로그인하고 마이펫 제작 시작하기
                           </>
-                        ) : points < 8 ? (
+                        ) : selectedEmotions.length === 0 ? (
+                          <>
+                            ⚠️ 제작할 감정 스티커를 1개 이상 선택해 주세요
+                          </>
+                        ) : points < selectedEmotions.length ? (
                           <>
                             <Zap className="w-4 h-4 animate-bounce" />
-                            ⚠️ 포인트가 부족합니다 (8 P 필요 / 충전하기)
+                            ⚠️ 포인트가 부족합니다 ({selectedEmotions.length} P 필요 / 충전하기)
                           </>
                         ) : (
                           <>
                             <Sparkles className="w-4 h-4" />
-                            ✨ 마이펫 실사 스티커 8종 패키지 제작하기 (8 P 소모)
+                            ✨ 마이펫 실사 스티커 {selectedEmotions.length}종 패키지 제작하기 ({selectedEmotions.length} P 소모)
                           </>
                         )}
                       </>
