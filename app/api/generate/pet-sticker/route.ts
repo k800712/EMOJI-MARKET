@@ -88,7 +88,7 @@ export async function POST(req: NextRequest) {
   try {
     console.log('[Step 1] 프론트엔드 이미지 수신 완료')
     const body = await req.json().catch(() => ({}))
-    const { image, walletAddress, style } = body
+    const { image, walletAddress, style, emotions } = body
 
     if (!image || !walletAddress) {
       return NextResponse.json({
@@ -96,6 +96,15 @@ export async function POST(req: NextRequest) {
         message: '필수 데이터(이미지, 지갑주소)가 부족합니다.'
       }, { status: 400 })
     }
+
+    if (!emotions || !Array.isArray(emotions) || emotions.length < 1 || emotions.length > 8) {
+      return NextResponse.json({
+        status: 'error',
+        message: '제작할 감정은 1개에서 최대 8개 사이여야 합니다.'
+      }, { status: 400 })
+    }
+
+    const requiredPoints = emotions.length
 
     // 스타일별 프롬프트 정의
     let stylePrompt = ""
@@ -120,7 +129,7 @@ export async function POST(req: NextRequest) {
 
     const supabase = await createClient(true) // service_role
 
-    // 1. 포인트 조회 및 선검증 (최소 8 P 필요)
+    // 1. 포인트 조회 및 선검증 (최소 requiredPoints P 필요)
     const userRecord = await runWithSchemaSafety(async () => {
       const { data, error } = await supabase
         .from('web3_users')
@@ -132,10 +141,10 @@ export async function POST(req: NextRequest) {
       return data
     })
 
-    if (!userRecord || (userRecord.points || 0) < 8) {
+    if (!userRecord || (userRecord.points || 0) < requiredPoints) {
       return NextResponse.json({
         status: 'error',
-        message: '보유 포인트가 부족합니다. 스티커를 제작하려면 최소 8 P가 필요합니다.'
+        message: `보유 포인트가 부족합니다. 스티커를 제작하려면 최소 ${requiredPoints} P가 필요합니다.`
       }, { status: 403 })
     }
 
@@ -262,17 +271,33 @@ export async function POST(req: NextRequest) {
       }
     ]
 
+    const emotionToThemeMap: Record<string, string> = {
+      'Happy': '01_thanks',
+      'Playful': '02_fighting',
+      'Proud': '03_sparkle',
+      'Angry': '04_roar',
+      'Tired': '05_pout',
+      'Wow': '06_wow',
+      'Sad': '07_sad',
+      'Love': '08_yes'
+    }
+
+    const activeThemes = emotions.map(emotionKey => {
+      const themeName = emotionToThemeMap[emotionKey]
+      return stickerThemes.find(t => t.name === themeName)
+    }).filter((t): t is NonNullable<typeof t> => !!t)
+
     const imageResults = []
     const zip = new JSZip()
     const uploadedFilePaths: string[] = []
     const createdUuids: string[] = []
     const initialPoints = userRecord.points
 
-    // Step 4: 8종 화풍 변형 생성 기동
-    console.log('[Step 4] 8종 감정 이미지 AI 생성 시작')
+    // Step 4: 선택 감정 화풍 변형 생성 기동
+    console.log(`[Step 4] ${activeThemes.length}종 감정 이미지 AI 생성 시작`)
     
-    // API 한도 보호를 위해 8종을 지연(delay)를 주어 순차 생성
-    for (const theme of stickerThemes) {
+    // API 한도 보호를 위해 지연(delay)를 주어 순차 생성
+    for (const theme of activeThemes) {
       console.log(`[Sticker Generator] ${theme.label} 테마 생성 시작`)
       
       const themePrompt = theme.concept
@@ -410,7 +435,7 @@ export async function POST(req: NextRequest) {
       // 쓰기 루프 지연 (서버리스 커넥션 과부하 예방)
       await new Promise(r => setTimeout(r, 200))
     }
-    console.log('[Step 4] 8종 감정 이미지 AI 생성 성공')
+    console.log(`[Step 4] ${activeThemes.length}종 감정 이미지 AI 생성 성공`)
 
     // emojis 스토리지 버킷이 없으면 백엔드 단에서 자동 Private 생성 (무오류 연동)
     try {
@@ -474,11 +499,11 @@ export async function POST(req: NextRequest) {
         if (dbError) throw dbError
         dbInsertSuccess = true
 
-        // 2. web3_users 테이블 포인트 차감 (8 P 차감)
+        // 2. web3_users 테이블 포인트 차감
         const { error: updateError } = await supabase
           .from('web3_users')
           .update({ 
-            points: initialPoints - 8,
+            points: initialPoints - requiredPoints,
             updated_at: new Date().toISOString()
           })
           .eq('wallet_address', walletAddress.toLowerCase())
@@ -491,9 +516,9 @@ export async function POST(req: NextRequest) {
           .from('point_transactions')
           .insert({
             wallet_address: walletAddress.toLowerCase(),
-            amount: -8,
+            amount: -requiredPoints,
             transaction_type: 'use',
-            description: '마이펫 실사 스티커 8종 패키지 제작'
+            description: `마이펫 실사 스티커 ${emotions.length}종 패키지 제작`
           })
 
         if (insertError) throw insertError
@@ -525,8 +550,8 @@ export async function POST(req: NextRequest) {
             .from('point_transactions')
             .delete()
             .eq('wallet_address', walletAddress.toLowerCase())
-            .eq('amount', -8)
-            .eq('description', '마이펫 실사 스티커 8종 패키지 제작')
+            .eq('amount', -requiredPoints)
+            .eq('description', `마이펫 실사 스티커 ${emotions.length}종 패키지 제작`)
         }
         
         throw dbError // 스토리지 삭제 가동을 위해 상위 catch로 전달
@@ -544,7 +569,7 @@ export async function POST(req: NextRequest) {
           uuid: item.uuid
         })),
         zip: zipBase64,
-        remainingPoints: initialPoints - 8
+        remainingPoints: initialPoints - requiredPoints
       })
 
     } catch (mainError: any) {
