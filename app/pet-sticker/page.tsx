@@ -144,21 +144,26 @@ export default function Home() {
   const [petStickerZip, setPetStickerZip] = useState<string>('')
   const [isPetGenerating, setIsPetGenerating] = useState<boolean>(false)
   const [selectedEmotions, setSelectedEmotions] = useState<string[]>([])
-  const isInitializedRef = useRef(false)
+  const lastInitializedImageRef = useRef<string | null>(null)
 
-  // [가드 1] 이미지 업로드 성공 시(noBgImageUrl 수립 시)에만 "단 1회" 8종 전체 선택 기본 세팅
+  // [가드 1] 이미지 업로드 성공 시(새로운 이미지 수립 시)에만 8종 전체 선택 기본 세팅 (무한 리셋 차단)
   useEffect(() => {
-    if (noBgImageUrl && !isInitializedRef.current) {
-      setSelectedEmotions(['Happy', 'Sad', 'Angry', 'Wow', 'Playful', 'Tired', 'Love', 'Proud'])
-      isInitializedRef.current = true
-      console.log("[DEBUG] 8종 기본 감정 All-On 초기 세팅 완료 (noBgImageUrl 준비완료)")
-    }
+    if (uploadedFile) {
+      const currentKey = `${uploadedFile.name}_${uploadedFile.size}`
+      
+      // 동일한 이미지에 대해서는 초기화 바이패스 (Stale Loop 차단)
+      if (lastInitializedImageRef.current === currentKey) {
+        return
+      }
 
-    if (!noBgImageUrl) {
+      setSelectedEmotions(['Happy', 'Sad', 'Angry', 'Wow', 'Playful', 'Tired', 'Love', 'Proud'])
+      lastInitializedImageRef.current = currentKey
+      console.log(`[DEBUG] 8종 기본 감정 All-On 초기 세팅 완료 - 이미지: ${currentKey}`)
+    } else {
       setSelectedEmotions([])
-      isInitializedRef.current = false
+      lastInitializedImageRef.current = null
     }
-  }, [noBgImageUrl])
+  }, [uploadedFile])
 
   // [가드 2] 안전한 함수형 상태 업데이트 및 전파 제어가 장착된 토글 핸들러
   const handleToggleEmotion = useCallback((e: React.MouseEvent, emotion: string) => {
