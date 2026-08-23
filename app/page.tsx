@@ -184,6 +184,79 @@ export default function Home() {
       return nextState
     })
   }, [])
+
+  const currentStyleList = useMemo(() => {
+    if (activeMode === 'pet') {
+      return [
+        {
+          id: 'CLAY',
+          tag: '3D 클레이',
+          title: '클레이 점토 🐶',
+          desc: '귀엽고 둥글둥글한 찰흙 느낌. 부드러운 질감과 따뜻한 색감',
+          hash: '#점토스타일 #클레이아트',
+          labelColor: 'text-pink-600 bg-pink-50 border-pink-100',
+          label: 'CLAY'
+        },
+        {
+          id: 'DISNEY',
+          tag: '3D 디즈니',
+          title: '디즈니 입체풍 🌟',
+          desc: '초롱초롱한 눈빛, 섬세한 털 묘사. 픽사/디즈니 애니메이션 주인공 느낌',
+          hash: '#디즈니화풍 #입체캐릭터',
+          labelColor: 'text-violet-600 bg-violet-50 border-violet-100',
+          label: 'DISNEY'
+        },
+        {
+          id: 'WATERCOLOR',
+          tag: '수채화 일러스트',
+          title: '감성 수채화 🎨',
+          desc: '연필 선과 은은한 파스텔톤 컬러감. 포근하고 서정적인 아날로그 붓질',
+          hash: '#감성수채화 #핸드드로잉',
+          labelColor: 'text-cyan-600 bg-cyan-50 border-cyan-100',
+          label: 'WATER'
+        }
+      ]
+    } else {
+      return [
+        {
+          id: 'Webtoon',
+          tag: '웹툰 스타일',
+          title: '식빵냥 🐱',
+          desc: '애매모호하고 표정 변화 풍부. 위트와 뚱함의 조화',
+          hash: '#웹툰화풍 #상황묘사',
+          labelColor: 'text-violet-600 bg-violet-50 border-violet-100',
+          label: 'CAT'
+        },
+        {
+          id: 'Pixel',
+          tag: '픽셀 스타일',
+          title: '라떼 곰 🐻',
+          desc: '직관적 의사전달. 격려와 칭찬의 따뜻한 텍스트 결합',
+          hash: '#픽셀화풍 #레트로게임',
+          labelColor: 'text-cyan-600 bg-cyan-50 border-cyan-100',
+          label: 'BEAR'
+        },
+        {
+          id: '3D Clay',
+          tag: '3D 클레이 스타일',
+          title: '일하는 토끼 🐰',
+          desc: '현실 밀착형 오피스 공감. 눈밑 그늘진 토끼',
+          hash: '#3D점토 #클레이스타일',
+          labelColor: 'text-pink-600 bg-pink-50 border-pink-100',
+          label: 'RABBIT'
+        }
+      ]
+    }
+  }, [activeMode])
+
+  useEffect(() => {
+    if (activeMode === 'pet') {
+      setSelectedStyle('CLAY')
+    } else {
+      setSelectedStyle('Webtoon')
+    }
+  }, [activeMode])
+
   const [isNoBgLoading, setIsNoBgLoading] = useState<boolean>(false)
   const [noBgImageUrl, setNoBgImageUrl] = useState<string>('')
   const [tosChecked, setTosChecked] = useState<boolean>(false)
@@ -1426,41 +1499,13 @@ export default function Home() {
             </div>
 
             {/* Style Selector */}
-            <div className={`bg-white border border-gray-200/60 rounded-3xl p-6 shadow-xl shadow-gray-200/30 ${activeMode === 'illust' ? '' : 'hidden'}`}>
+            <div className="bg-white border border-gray-200/60 rounded-3xl p-6 shadow-xl shadow-gray-200/30">
               <h2 className="text-md font-bold mb-4 flex items-center gap-2 text-gray-800">
                 <span className="w-1 h-4 bg-brand-primary rounded-full"></span>
                 3. 캐릭터 기본 화풍 선택
               </h2>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {[
-                  {
-                    id: 'Webtoon',
-                    tag: '웹툰 스타일',
-                    title: '식빵냥 🐱',
-                    desc: '애매모호하고 표정 변화 풍부. 위트와 뚱함의 조화',
-                    hash: '#웹툰화풍 #상황묘사',
-                    labelColor: 'text-violet-600 bg-violet-50 border-violet-100',
-                    label: 'CAT'
-                  },
-                  {
-                    id: 'Pixel',
-                    tag: '픽셀 스타일',
-                    title: '라떼 곰 🐻',
-                    desc: '직관적 의사전달. 격려와 칭찬의 따뜻한 텍스트 결합',
-                    hash: '#픽셀화풍 #레트로게임',
-                    labelColor: 'text-cyan-600 bg-cyan-50 border-cyan-100',
-                    label: 'BEAR'
-                  },
-                  {
-                    id: '3D Clay',
-                    tag: '3D 클레이 스타일',
-                    title: '일하는 토끼 🐰',
-                    desc: '현실 밀착형 오피스 공감. 눈밑 그늘진 토끼',
-                    hash: '#3D점토 #클레이스타일',
-                    labelColor: 'text-pink-600 bg-pink-50 border-pink-100',
-                    label: 'RABBIT'
-                  }
-                ].map((style) => (
+                {currentStyleList.map((style) => (
                   <div
                     key={style.id}
                     onClick={() => setSelectedStyle(style.id)}
