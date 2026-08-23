@@ -11,7 +11,7 @@ const EMOTION_LIST = [
   { key: 'Proud', label: '😎 든든', desc: '반짝!' }
 ]
 
-import React, { useState, useEffect, useRef, useMemo } from 'react'
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { 
   Smile, 
   Wand2, 
@@ -144,11 +144,17 @@ export default function Home() {
   const [petStickerZip, setPetStickerZip] = useState<string>('')
   const [isPetGenerating, setIsPetGenerating] = useState<boolean>(false)
   const [selectedEmotions, setSelectedEmotions] = useState<string[]>(['Happy', 'Sad', 'Angry', 'Wow', 'Playful', 'Tired', 'Love', 'Proud'])
-  const handleToggleEmotion = (emotion: string) => {
-    setSelectedEmotions(prev => 
-      prev.includes(emotion) ? prev.filter(e => e !== emotion) : [...prev, emotion]
-    )
-  }
+  const handleToggleEmotion = useCallback((emotion: string) => {
+    console.log("[DEBUG] Clicked Emotion:", emotion);
+    setSelectedEmotions((prev) => {
+      if (prev.includes(emotion)) {
+        return prev.filter((e) => e !== emotion);
+      } else {
+        if (prev.length >= 8) return prev;
+        return [...prev, emotion];
+      }
+    });
+  }, []);
   const [isNoBgLoading, setIsNoBgLoading] = useState<boolean>(false)
   const [noBgImageUrl, setNoBgImageUrl] = useState<string>('')
   const [tosChecked, setTosChecked] = useState<boolean>(false)
@@ -1360,7 +1366,7 @@ export default function Home() {
                             key={theme.key}
                             type="button"
                             onClick={() => handleToggleEmotion(theme.key)}
-                            className={`border rounded-xl p-2.5 text-center flex flex-col justify-center items-center gap-1 shadow-sm transition-all duration-200 select-none ${
+                            className={`border rounded-xl p-2.5 text-center flex flex-col justify-center items-center gap-1 shadow-sm transition-all duration-200 select-none cursor-pointer pointer-events-auto ${
                               isActive
                                 ? 'bg-brand-primary/10 border-brand-primary text-brand-primary font-black scale-[1.03] shadow-md shadow-brand-primary/5'
                                 : 'bg-gray-50 border-gray-100 text-gray-400 font-medium opacity-70 hover:opacity-100 hover:bg-gray-100/50'
