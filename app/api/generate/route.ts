@@ -177,7 +177,7 @@ export async function POST(req: NextRequest) {
 
     for (let i = 0; i < 3; i++) {
       try {
-        const imageModel = "gemini-3.5-flash-image"
+        const imageModel = "gemini-3.1-flash-image"
         const imagenRes = await fetchWithRetry(
           `https://generativelanguage.googleapis.com/v1beta/models/${imageModel}:generateContent?key=${getGeminiApiKey()}`,
           {
