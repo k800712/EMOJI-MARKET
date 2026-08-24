@@ -8,13 +8,9 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
-// Gemini API Key 엉뚱한 값 오염 방지 락 가드 폴백 함수
+// Gemini API Key 취득 함수
 const getGeminiApiKey = () => {
-  const key = process.env.GEMINI_API_KEY || ''
-  if (!key || key.startsWith('AQ.Ab8') || key.length < 20) {
-    return 'AIzaSyCMcpnXQmpm2-m-AJRpycFd9h0yITWACkA'
-  }
-  return key
+  return process.env.GEMINI_API_KEY || ''
 }
 
 // 지수 백오프 기반 HTTP 호출 재시도 헬퍼 (429/503 방어)

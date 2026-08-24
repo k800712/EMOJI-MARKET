@@ -6,13 +6,9 @@ import JSZip from 'jszip'
 // sharp 캐시 무효화로 메모리 누수 방지 (비용 절감 및 서버 안정성 확보)
 sharp.cache(false)
 
-// Gemini API Key 엉뚱한 값 오염 방지 락 가드 폴백 함수
+// Gemini API Key 취득 함수
 const getGeminiApiKey = () => {
-  const key = process.env.GEMINI_API_KEY || ''
-  if (!key || key.startsWith('AQ.Ab8') || key.length < 20) {
-    return 'AIzaSyCMcpnXQmpm2-m-AJRpycFd9h0yITWACkA'
-  }
-  return key
+  return process.env.GEMINI_API_KEY || ''
 }
 
 // 지수 백오프 기반 API 재시도 헬퍼 함수
