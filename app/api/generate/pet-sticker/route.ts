@@ -171,11 +171,15 @@ export async function POST(req: NextRequest) {
       }]
     }
 
+    const modelName = "gemini-3.5-flash"
     const geminiRes = await fetchWithRetry(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${getGeminiApiKey()}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${getGeminiApiKey()}`,
       {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'x-goog-api-key': getGeminiApiKey()
+        },
         body: JSON.stringify(geminiPayload)
       }
     )
@@ -339,11 +343,15 @@ export async function POST(req: NextRequest) {
 
       for (let i = 0; i < 3; i++) {
         try {
+          const imageModel = "gemini-3.5-flash-image"
           const imagenRes = await fetchWithRetry(
-            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent?key=${getGeminiApiKey()}`,
+            `https://generativelanguage.googleapis.com/v1beta/models/${imageModel}:generateContent?key=${getGeminiApiKey()}`,
             {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
+              headers: { 
+                'Content-Type': 'application/json',
+                'x-goog-api-key': getGeminiApiKey()
+              },
               body: JSON.stringify(imagenPayload)
             }
           )
