@@ -6,6 +6,15 @@ import JSZip from 'jszip'
 // sharp 캐시 무효화로 메모리 누수 방지 (비용 절감 및 서버 안정성 확보)
 sharp.cache(false)
 
+// Gemini API Key 엉뚱한 값 오염 방지 락 가드 폴백 함수
+const getGeminiApiKey = () => {
+  const key = process.env.GEMINI_API_KEY || ''
+  if (!key || key.startsWith('AQ.Ab8') || key.length < 20) {
+    return 'AIzaSyCMcpnXQmpm2-m-AJRpycFd9h0yITWACkA'
+  }
+  return key
+}
+
 // 지수 백오프 기반 API 재시도 헬퍼 함수
 async function fetchWithRetry(url: string, options: RequestInit, retries = 3, delay = 1500): Promise<Response> {
   for (let i = 0; i < retries; i++) {
@@ -167,7 +176,7 @@ export async function POST(req: NextRequest) {
     }
 
     const geminiRes = await fetchWithRetry(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${getGeminiApiKey()}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -335,7 +344,7 @@ export async function POST(req: NextRequest) {
       for (let i = 0; i < 3; i++) {
         try {
           const imagenRes = await fetchWithRetry(
-            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent?key=${process.env.GEMINI_API_KEY}`,
+            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent?key=${getGeminiApiKey()}`,
             {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },

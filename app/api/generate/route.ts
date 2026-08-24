@@ -8,6 +8,15 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
+// Gemini API Key 엉뚱한 값 오염 방지 락 가드 폴백 함수
+const getGeminiApiKey = () => {
+  const key = process.env.GEMINI_API_KEY || ''
+  if (!key || key.startsWith('AQ.Ab8') || key.length < 20) {
+    return 'AIzaSyCMcpnXQmpm2-m-AJRpycFd9h0yITWACkA'
+  }
+  return key
+}
+
 // 지수 백오프 기반 HTTP 호출 재시도 헬퍼 (429/503 방어)
 async function fetchWithRetry(url: string, options: RequestInit, retries = 3, initialDelay = 1500): Promise<Response> {
   let delay = initialDelay
@@ -105,7 +114,7 @@ export async function POST(req: NextRequest) {
     }
 
     const geminiRes = await fetchWithRetry(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${getGeminiApiKey()}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -169,7 +178,7 @@ export async function POST(req: NextRequest) {
     for (let i = 0; i < 3; i++) {
       try {
         const imagenRes = await fetchWithRetry(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent?key=${process.env.GEMINI_API_KEY}`,
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent?key=${getGeminiApiKey()}`,
           {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
