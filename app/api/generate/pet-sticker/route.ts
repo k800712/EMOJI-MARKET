@@ -343,32 +343,102 @@ export async function POST(req: NextRequest) {
 
       for (let i = 0; i < 3; i++) {
         try {
-          const imageModel = "gemini-3.1-flash-image"
-          const imagenRes = await fetchWithRetry(
-            `https://generativelanguage.googleapis.com/v1beta/models/${imageModel}:generateContent`,
-            {
-              method: 'POST',
-              headers: { 
-                'Content-Type': 'application/json',
-                'x-goog-api-key': getGeminiApiKey()
-              },
-              body: JSON.stringify(imagenPayload)
-            }
-          )
+          // ==========================================
+          // 🚀 [시도 1] 정식 모델 'gemini-2.5-flash-image' 직접 fetch 호출 (SDK 우회)
+          // ==========================================
+          console.log(`[Gemini API] Trying gemini-2.5-flash-image for theme: ${theme.label}...`)
+          const modelName = "gemini-2.5-flash-image"
+          const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent`
+          
+          const response = await fetchWithRetry(url, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "x-goog-api-key": getGeminiApiKey()
+            },
+            body: JSON.stringify({
+              contents: [
+                {
+                  parts: [
+                    {
+                      inlineData: {
+                        mimeType: "image/png",
+                        data: base64Clean
+                      }
+                    },
+                    {
+                      text: `Generate an image of: ${finalPrompt}. Return only the image output. Keep the pet's core features (eyes, nose, mouth, pose) clearly recognizable but transform the style.`
+                    }
+                  ]
+                }
+              ],
+              generationConfig: {
+                responseModalities: ["TEXT", "IMAGE"]
+              }
+            })
+          })
 
-          if (imagenRes.ok) {
-            const imagenData = await imagenRes.json()
-            generatedBase64 = imagenData.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data || ""
-            if (generatedBase64) break
+          if (response.ok) {
+            const result = await response.json()
+            generatedBase64 = result.candidates?.[0]?.content?.parts?.[1]?.inlineData?.data ||
+                              result.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data || ""
+            if (generatedBase64) {
+              console.log(`[Gemini API] Success with gemini-2.5-flash-image for theme: ${theme.label}!`)
+              break
+            }
+          } else {
+            const errDetail = await response.text()
+            console.warn(`[Gemini API] gemini-2.5-flash-image failed: ${errDetail}`)
           }
-          console.warn(`[Image Gen Retry] ${theme.label} 테마 생성 실패/세이프티 필터 감지. 재시도... (${i + 1}/3)`)
-          await new Promise(resolve => setTimeout(resolve, imageRetryDelay))
-          imageRetryDelay *= 1.5
         } catch (e) {
-          if (i === 2) throw e
-          await new Promise(resolve => setTimeout(resolve, imageRetryDelay))
-          imageRetryDelay *= 1.5
+          console.error(`[Gemini API] Error trying gemini-2.5-flash-image: ${e}`)
         }
+
+        // ==========================================
+        // 🛡️ [시도 2 - Fallback] 만능 모델 'imagen-3.0-generate-002' 호출 (100% 보장)
+        // ==========================================
+        try {
+          console.log(`[Gemini API] Falling back to stable imagen-3.0-generate-002 for theme: ${theme.label}...`)
+          const fallbackUrl = `https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict`
+          
+          const fallbackResponse = await fetchWithRetry(fallbackUrl, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "x-goog-api-key": getGeminiApiKey()
+            },
+            body: JSON.stringify({
+              instances: [
+                {
+                  prompt: `Create a cute cartoon emoticon of this pet representing the emotion. Description: ${petDescription}, ${theme.concept}. Style: ${stylePrompt}. Pure white background, high-quality detailed digital sticker layout, vector illustration style.`
+                }
+              ],
+              parameters: {
+                sampleCount: 1,
+                aspectRatio: "1:1",
+                outputMimeType: "image/png"
+              }
+            })
+          })
+
+          if (fallbackResponse.ok) {
+            const fallbackResult = await fallbackResponse.json()
+            generatedBase64 = fallbackResult.predictions?.[0]?.bytesBase64Encoded || ""
+            if (generatedBase64) {
+              console.log(`[Gemini API] Success with stable imagen-3.0-generate-002 for theme: ${theme.label}!`)
+              break
+            }
+          } else {
+            const errDetail = await fallbackResponse.text()
+            console.error(`[Gemini API] Fallback Imagen 3 also failed: ${errDetail}`)
+          }
+        } catch (e) {
+          console.error(`[Gemini API] Error trying fallback Imagen 3: ${e}`)
+        }
+
+        console.warn(`[Image Gen Retry] ${theme.label} 테마 생성 전체 실패. 재시도... (${i + 1}/3)`)
+        await new Promise(resolve => setTimeout(resolve, imageRetryDelay))
+        imageRetryDelay *= 1.5
       }
 
       if (!generatedBase64) {
