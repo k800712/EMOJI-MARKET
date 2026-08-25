@@ -111,7 +111,7 @@ export async function POST(req: NextRequest) {
 
     const modelName = "gemini-3.5-flash"
     const geminiRes = await fetchWithRetry(
-      `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${getGeminiApiKey()}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent`,
       {
         method: 'POST',
         headers: { 
@@ -179,7 +179,7 @@ export async function POST(req: NextRequest) {
       try {
         const imageModel = "gemini-3.1-flash-image"
         const imagenRes = await fetchWithRetry(
-          `https://generativelanguage.googleapis.com/v1beta/models/${imageModel}:generateContent?key=${getGeminiApiKey()}`,
+          `https://generativelanguage.googleapis.com/v1beta/models/${imageModel}:generateContent`,
           {
             method: 'POST',
             headers: { 
